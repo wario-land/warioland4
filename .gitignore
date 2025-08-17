@@ -54,5 +54,6 @@ dkms.conf
 # debug information files
 *.dwo
 
-# gba files
+# gba files and savefiles
 *.gba
+*.sav

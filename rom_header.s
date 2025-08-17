@@ -55,7 +55,7 @@ RomHeaderSoftwareVersion:
 	.byte 0
 
 RomHeaderChecksum: @ 0xBD:0xEC for E or 0x2C for J, header checksum, required! rule:chk=0:for i=0A0h to 0BCh:chk=chk-[i]:next:chk=(chk-19h) and 0FFh
-	.byte 0x2C
+	.byte 0xEC
 
 RomHeaderReserved2: @ filled with 0
 	.byte 0x00,0x00

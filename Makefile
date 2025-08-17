@@ -1,5 +1,11 @@
 NDEBUG	=	1
 
+override CC	=	"E:\Program Files (x86)\GNU Arm Embedded Toolchain\10 2020-q4-major\bin\arm-none-eabi-gcc.exe"
+override AS	=	"E:\Program Files (x86)\GNU Arm Embedded Toolchain\10 2020-q4-major\bin\arm-none-eabi-as.exe"
+override OBJCOPY	=	"E:\Program Files (x86)\GNU Arm Embedded Toolchain\10 2020-q4-major\bin\arm-none-eabi-objcopy.exe"
+override AR	=	"E:\Program Files (x86)\GNU Arm Embedded Toolchain\10 2020-q4-major\bin\arm-none-eabi-ar.exe"
+override LD	=	"E:\Program Files (x86)\GNU Arm Embedded Toolchain\10 2020-q4-major\bin\arm-none-eabi-ld.exe"
+
 # ARCDIR0 = constants
 # ARCDIR1 = gba
 
@@ -25,7 +31,7 @@ default:
 	@make $(TARGET_BIN)
 
 $(TARGET_BIN): $(TARGET_ELF)
-	objcopy -v -O binary $< $@
+	$(OBJCOPY) -v -O binary $< $@
 
 $(TARGET_ELF): $(.OFILES)
 	@echo > $(MAPFILE)

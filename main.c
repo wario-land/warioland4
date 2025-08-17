@@ -26,7 +26,7 @@ const IntrFunc gInterruptVectorTable[] =
 
 #define Interrupt_COUNT ((int)(sizeof(gIntrTableTemplate)/sizeof(IntrFunc)))
 
-IWRAM_DATA static struct InterruptHandler gInterruptHandler = {0}; // 0x30019FC
+IWRAM_DATA struct InterruptHandler gInterruptHandler = {0}; // 0x30019FC
 
 #define COL_YELLOW  0x03FF
 

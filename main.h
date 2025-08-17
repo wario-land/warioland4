@@ -15,7 +15,7 @@ struct InterruptHandler
 
 extern struct InterruptHandler gInterruptHandler;
 
-void AgbMain(void);
+void AgbMain(void) __attribute__((target("thumb"))); // Ensure calls from ctr0.s can work with Thumb mode
 void AllReset(void);
 
 #endif // MAIN_H
