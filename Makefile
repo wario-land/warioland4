@@ -13,7 +13,7 @@ override LD	=	"E:\Program Files (x86)\GNU Arm Embedded Toolchain\10 2020-q4-majo
 
 # .AFILES		=	$(addprefix lib,$(addsuffix .a,$(ARCDIRS)))
 .SFILES		=	crt0.s rom_header.s
-.CFILES		=	main.c
+.CFILES		=	gameutils.c main.c
 .OFILES		=	$(.SFILES:.s=.o) $(.CFILES:.c=.o)
 
 ASFLAGS		=	-mthumb-interwork

@@ -32,6 +32,8 @@ SECTIONS {
         crt0.o(.text);
         main.o(.text);
 
+        gameutils.o(.text);
+
     } > ROM
 
     .rodata :
