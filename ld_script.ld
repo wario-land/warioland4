@@ -13,6 +13,7 @@ SECTIONS {
     {
         . = ALIGN(4);
         *.o(ewram_data);
+        *.o(.bss.ewram .bss.ewram.*);
 
     } > EWRAM
 
@@ -20,6 +21,8 @@ SECTIONS {
     {
         . = ALIGN(4);
         *.o(iwram_data);
+        *.o(.bss.iwram .bss.iwram.*);
+        *.o(.bss .bss.*);
 
     } > IWRAM
 
@@ -38,13 +41,13 @@ SECTIONS {
 
     .rodata :
     {
-        
+
         rom_header.o(.rodata);
         main.o(.rodata);
 
     } > ROM
 
-    /* we need this part to reserve those call_via_r0, call_via_r1, etc. chunk. */
+    /* Catch-all for remaining code and read-only data */
     extra :
     {
         . = ALIGN(4);
@@ -52,10 +55,17 @@ SECTIONS {
         *.o(.rodata);
     } > ROM
 
-    /* Discard everything not specifically mentioned above. exclude ELF Header or the rom will have them somewhere */
+    /* Discard ELF headers and other unneeded metadata */
     /DISCARD/ :
     {
-        *(*);
+        *(MIPS.abiflags);
+        *(.reginfo);
+        *(.comment);
+        *(.note.GNU-stack);
+        *(.gnu.attributes);
+        *(.gnu.build.attributes);
+        *(.gnu_debuglink);
+        *(.gnu.lto_*);
     }
 
 }

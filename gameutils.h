@@ -2,6 +2,7 @@
 #define GAMEUTILS_H
 
 #include "gba/types.h"
+#include "main.h"
 
 // from g_select.h
 extern s16 sSelSeq; // 0x3000000, (A)SAVE
@@ -210,15 +211,49 @@ struct CChangeDef
  u8 ucDMAf;  // DMA transfer switch
  u8 ucSp;  // Change SP
 };
-extern struct CChangeDef CCobj;
-extern struct CChangeDef CCbg;
+extern struct CChangeDef CCobj; // 0x30000f4
+extern struct CChangeDef CCbg; // 0x30000fc
 
 
+// from g_pause.h
+extern s8 cPauseFlag; // 0x3000c35, OFF 0, ON 1, RETURN 2, RETIRE 3, SAVE 4
+extern u8 ucSelectedRecordNum; // 0x3000c36, 0: Default, 1-16 stage records
 
-
+// from g_shop.h
+extern s8 cShopFlag; // 0x3000c37, used with PAUSE, OFF 0, ON 1
+extern u8 ucShopItemType; // 0x3000c38
+enum ShopItemTypeDef
+{
+    SHOP_ITEM_TYPE_NONE,
+    SHOP_ITEM_TYPE_BOMB,
+    SHOP_ITEM_TYPE_CANON,
+    SHOP_ITEM_TYPE_WHITEMAN,
+    SHOP_ITEM_TYPE_MUSIC,
+    SHOP_ITEM_TYPE_DOG,
+    SHOP_ITEM_TYPE_KISS,
+    SHOP_ITEM_TYPE_GENKOTU,
+    SHOP_ITEM_TYPE_DRAGON
+};
 
 // from global.h
 extern s16 sMainSeq, sGameSeq; // 0x3000c3a, // 0x3000c3c
+enum MainSeqDef
+{
+    MS_TITLE = 0,
+    MS_SELECT = 1,
+    MS_MAIN = 2,
+    MS_RESET = 3,
+    MS_PAUSE = 4,
+    MS_SAVEINTERRUPT = 5,
+    MS_MINI = 6,
+    MS_SHOP = 7,
+    MS_DEMO = 8,
+    MS_FILESELECT = 9,
+    MS_DELETE = 10,
+    MS_TITLE2 = 11,
+    MS_CREDITS = 12
+};
+
 extern s8 cNextFlg, cGmStartFlg, cVblkFlg; // 0x3000c3e
 extern u8 ucMainTimer; // 0x3000c41
 
@@ -257,6 +292,10 @@ extern u8 ucDemoSwitch; // 0x3001894
 // but we don't want to use dependencies
 void *memcpy(void *dest, const void *src, u32 len);
 void *memset(void *dest, int value, u32 len);
+
+// Interrupt / VBlank management
+extern IntrFunc sVblkFunc;
+void SetVblkFunc(IntrFunc fnc);
 
 
 #endif // GAMEUTILS_H

@@ -60,3 +60,13 @@ dkms.conf
 
 # vscode folders
 .vscode/
+
+# claude
+.claude/
+.mcp.json
+
+# ref folder
+ref/
+
+# tmp folder
+tmp/

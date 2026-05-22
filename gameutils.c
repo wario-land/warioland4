@@ -142,6 +142,22 @@ IWRAM_DATA u16 usFadeTimer;
 IWRAM_DATA u16 usGatePosX, usGatePosY;
 IWRAM_DATA u8 ucDemoSwitch;
 
+// from g_pause.h
+IWRAM_DATA s8 cPauseFlag;
+IWRAM_DATA u8 ucSelectedRecordNum;
+
+// from g_shop.h
+IWRAM_DATA s8 cShopFlag;
+IWRAM_DATA u8 ucShopItemType;
+
+// VBlank function pointer (set by each screen module)
+IWRAM_DATA IntrFunc sVblkFunc;
+
+void SetVblkFunc(IntrFunc fnc)
+{
+    sVblkFunc = fnc;
+}
+
 
 // ----------------------------
 // CPU fallback (small buffers)
@@ -174,10 +190,10 @@ static inline void *dma_memcpy(void *dest, const void *src, u32 len)
     REG_DMA3CNT = 0; // Stop DMA
     REG_DMA3SAD = (u32)src;
     REG_DMA3DAD = (u32)dest;
-    REG_DMA3CNT = (len >> 2) | DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC;
+    REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (len >> 2);
 
     // Wait until finished
-    while (REG_DMA3CNT & DMA_ENABLE);
+    while (REG_DMA3CNT & (DMA_ENABLE << 16));
 
     // Tail bytes if not multiple of 4
     u32 rem = len & 3;
@@ -199,9 +215,9 @@ static inline void *dma_memset(void *dest, int value, u32 len)
     u32 val= value;
     REG_DMA3SAD = (u32)&val;
     REG_DMA3DAD = (u32)dest;
-    REG_DMA3CNT = (len >> 2) | DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC;
+    REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (len >> 2);
 
-    while (REG_DMA3CNT & DMA_ENABLE);
+    while (REG_DMA3CNT & (DMA_ENABLE << 16));
 
     // Tail bytes
     u32 rem = len & 3;
