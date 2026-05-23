@@ -51,6 +51,12 @@ void ResetKey()
         sMainSeq = MS_RESET;
 }
 
+void KeyReset(void)
+{
+    // Wait for all keys released, then return to title
+    // Called from MS_RESET handler
+}
+
 // ---- Hardware Initialization ----
 
 static void ClearGraphicRam(void)
@@ -104,12 +110,11 @@ void AllReset(void)
 }
 
 // ---- Main Game Loop ----
+// Matches IDA AgbMain at 0x80008e0
 void AgbMain(void)
 {
     int currentState;
-    s16 pauseState;
     int demoResult;
-    s16 miniGameResult;
 
     AllReset();
 
@@ -117,9 +122,9 @@ void AgbMain(void)
     {
         cVblkFlg = 0;
 
+        // Sound driver update each frame
         if (sMainSeq)
-            ;
-            // m4aSoundMain();  // TODO: sound
+            ; // m4aSoundMain();  // TODO: sound
 
         if (ucAllReset)
             break;
@@ -131,94 +136,322 @@ void AgbMain(void)
 
         switch (sMainSeq)
         {
-            case MS_TITLE:
-                if ((usCont & (A_BUTTON | L_BUTTON)) == (A_BUTTON | L_BUTTON) && (usTrg & R_BUTTON) != 0)
-                {
-                    sMainSeq = MS_TITLE2;
-                    sGameSeq = 0;
-                    cGmStartFlg = 0;
-                    break;
-                }
-
-                currentState = GameTitle();
-                switch (currentState)
-                {
-                    case TITLE_RESULT_START:
-                        sMainSeq = MS_FILESELECT;
-                        sGameSeq = 0;
-                        break;
-                    case TITLE_RESULT_END:
-                        sMainSeq = MS_SELECT;
-                        sGameSeq = 5;
-                        break;
-                    case TITLE_RESULT_ESCAPE:
-                        sMainSeq = MS_CREDITS;
-                        sGameSeq = 0;
-                        break;
-                    case TITLE_RESULT_ENDING:
-                        sMainSeq = MS_TITLE;
-                        sGameSeq = -1;
-                        break;
-                    default:
-                        if (ucAutoDemoNum & 0x80)
-                        {
-                            sMainSeq = MS_DEMO;
-                            sGameSeq = 0;
-                        }
-                        break;
-                }
-                break;
-
-            case MS_FILESELECT:
-                GameReady();
+        // ============================================================
+        //  MS_TITLE (0): Title screen
+        //  Hold B+L (0x22), press A (0x01) → debug stage select (MS_TITLE2)
+        // ============================================================
+        case MS_TITLE:
+            if ((usCont & 0x22) == 0x22 && (usTrg & 0x01) != 0)
+            {
+                sMainSeq = MS_TITLE2;
+                sGameSeq = 0;
                 cGmStartFlg = 0;
                 break;
+            }
 
-            case MS_SELECT:
-                GameSelect();
-                // fall through
-            case MS_MAIN:
-                GameMain();
+            currentState = GameTitle();
+            switch (currentState)
+            {
+                case 1:  // TITLE_RESULT_START → File Select
+                    sMainSeq = MS_FILESELECT;
+                    sGameSeq = 0;
+                    break;
+                case 2:  // TITLE_RESULT_END → Select (skip ready, go to map)
+                    sMainSeq = MS_SELECT;
+                    sGameSeq = 5;
+                    break;
+                case 3:  // TITLE_RESULT_ESCAPE → Credits
+                    sMainSeq = MS_CREDITS;
+                    sGameSeq = 0;
+                    break;
+                case 4:  // TITLE_RESULT_ENDING → Back to title
+                    sMainSeq = MS_TITLE;
+                    sGameSeq = -1;
+                    break;
+                default:
+                    if (ucAutoDemoNum & 0x80)
+                    {
+                        sMainSeq = MS_DEMO;
+                        sGameSeq = 0;
+                    }
+                    break;
+            }
+            break;
+
+        // ============================================================
+        //  MS_SELECT (1) + MS_MAIN (2): Select screen / Main game
+        //  Falls through: Select → check if game should be entered
+        // ============================================================
+        case MS_SELECT:
+            GameSelect();
+            // Fall through to MS_MAIN logic below
+
+        case MS_MAIN:
+            if (!GameMain())
                 break;
 
-            case MS_PAUSE:
-                GamePause();
+            // GameMain returned non-zero: game state transition needed
+            if (cPauseFlag)
+            {
+                sMainSeq = MS_PAUSE;
+            }
+            else if (cShopFlag)
+            {
+                sMainSeq = MS_SHOP;
+            }
+            else if (ucTitle2f)
+            {
+                sMainSeq = MS_TITLE2;
+            }
+            else
+            {
+                // Stage end routing based on ucSTEndType
+                sMainSeq = MS_SELECT;
+                switch (ucSTEndType)
+                {
+                case 0:
+                case 1:
+                    sGameSeq = 21;    // SEL_SEQ_DORA_INIT
+                    break;
+                case 2:
+                    sGameSeq = 20;    // back to pose
+                    break;
+                case 3:
+                case 4:
+                    sGameSeq = 14;    // SEL_SEQ_ROOM_INIT (save room)
+                    break;
+                case 5:
+                    if (!ucWorldNumBak)
+                        sGameSeq = 29;     // special end
+                    else if (ucWorldNumBak == 5)
+                    {
+                        sMainSeq = MS_TITLE;
+                        sGameSeq = -3;     // escape sequence
+                    }
+                    else
+                        sGameSeq = 25;     // boss door
+                    break;
+                case 6:
+                    sGameSeq = 38;    // mini game end
+                    break;
+                default:
+                    break;
+                }
+            }
+            break;
+
+        // ============================================================
+        //  MS_RESET (3): Soft reset — wait for keys released
+        // ============================================================
+        case MS_RESET:
+            KeyReset();
+            break;
+
+        // ============================================================
+        //  MS_PAUSE (4): Pause menu
+        // ============================================================
+        case MS_PAUSE:
+            if (!GamePause())
                 break;
 
-            case MS_MINI:
-                GameMini();
+            if (cPauseFlag == 2)  // Return to game
+            {
+                if (ucTitle2f)
+                {
+                    sMainSeq = MS_TITLE2;
+                }
+                else
+                {
+                    ucGateID = 0;
+                    sMainSeq = MS_SELECT;
+                    sGameSeq = 21;   // door transition
+                }
+            }
+            else if (cPauseFlag == 3)  // Retire
+            {
+                cPauseFlag = 0;
+                sMainSeq = MS_TITLE;
+            }
+            else if (cPauseFlag == 1)  // Continue
+            {
+                sMainSeq = MS_MAIN;
+            }
+            break;
+
+        // ============================================================
+        //  MS_SAVEINTERRUPT (5): Interrupted save write
+        // ============================================================
+        case MS_SAVEINTERRUPT:
+            // GameWriteTyudan();  // TODO: implement save interrupt handler
+            sMainSeq = MS_PAUSE;
+            break;
+
+        // ============================================================
+        //  MS_MINI (6): Mini-game
+        // ============================================================
+        case MS_MINI:
+            if (!GameMini())
                 break;
 
-            case MS_SHOP:
-                GameShop();
+            if (ucTitle2f)
+            {
+                sMainSeq = MS_TITLE2;
+                sGameSeq = 0;
+            }
+            else
+            {
+                sMainSeq = MS_SELECT;
+                sGameSeq = 39;   // mini game result
+            }
+            break;
+
+        // ============================================================
+        //  MS_SHOP (7): Shop
+        // ============================================================
+        case MS_SHOP:
+            if (!GameShop())
+                break;
+            sMainSeq = MS_MAIN;
+            break;
+
+        // ============================================================
+        //  MS_DEMO (8): Auto-demo
+        // ============================================================
+        case MS_DEMO:
+            if (!GameMain() || !cPauseFlag)
                 break;
 
-            case MS_DEMO:
-                GameMain();
+            demoResult = 0;  // AutoDemo_EndRegulation()
+            if (!demoResult)
+                sGameSeq = -1;
+            sMainSeq = MS_TITLE;
+            break;
+
+        // ============================================================
+        //  MS_FILESELECT (9): File Select / Ready screen
+        //  Hold B+L, press A → debug stage select
+        // ============================================================
+        case MS_FILESELECT:
+            if ((usCont & 0x22) == 0x22 && (usTrg & 0x01) != 0)
+            {
+                sGameSeq = 0;
+                sMainSeq = MS_TITLE2;
+            }
+            else
+            {
+                if (GameReady())
+                {
+                    if (cNextFlg == 1)
+                    {
+                        if (ucDisConFlg)
+                        {
+                            sGameSeq = 0;
+                            sMainSeq = MS_MAIN;
+                        }
+                        else
+                        {
+                            sMainSeq = MS_SELECT;
+                            if (ucSaveFlg)
+                            {
+                                if (ucStageNum == 6)
+                                    sGameSeq = 0;
+                                else
+                                    sGameSeq = 38;  // boss door
+                            }
+                            else
+                            {
+                                sGameSeq = -2;
+                                sMainSeq = MS_TITLE;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        sGameSeq = 0;
+                        sMainSeq = MS_TITLE;
+                    }
+                    cNextFlg = 0;
+                }
+            }
+            cGmStartFlg = 0;
+            break;
+
+        // ============================================================
+        //  MS_DELETE (10): Delete save data
+        // ============================================================
+        case MS_DELETE:
+            if (!GameDelete())
                 break;
 
-            case MS_DELETE:
-                GameDelete();
+            sGameSeq = 0;
+            if (cNextFlg == 1)
+            {
+                ucAllReset = 2;  // full reset after delete
+            }
+            else
+            {
+                sMainSeq = MS_TITLE;
+            }
+            break;
+
+        // ============================================================
+        //  MS_TITLE2 (11): Debug stage select / title 2
+        // ============================================================
+        case MS_TITLE2:
+            if (!GameTitle2())
                 break;
 
-            case MS_TITLE2:
-                GameTitle2();
+            switch (cNextFlg)
+            {
+            case 1:  // Start game from debug select
+                sMainSeq = MS_MAIN;
+                if (cSelectedNo == 6 || cSelectedNo == 12 ||
+                    cSelectedNo == 18 || cSelectedNo == 24)
+                {
+                    sGameSeq = 0;
+                    sMainSeq = MS_MINI;   // mini game
+                }
+                break;
+            case 2:  // Demo
+                sMainSeq = MS_DEMO;
+                sGameSeq = 0;
+                break;
+            case 3:  // Credits
+                sMainSeq = MS_CREDITS;
+                sGameSeq = 0;
+                break;
+            case 4:  // Escape sequence
                 sMainSeq = MS_TITLE;
                 sGameSeq = -3;
                 break;
-
-            case MS_CREDITS:
-                GameEnding1();
+            case 5:  // Ending
                 sMainSeq = MS_TITLE;
                 sGameSeq = -4;
                 break;
-
-            case MS_RESET:
-                break;
-
             default:
+                sMainSeq = MS_TITLE;
+                sGameSeq = 0;
                 break;
+            }
+            cNextFlg = 0;
+            break;
+
+        // ============================================================
+        //  MS_CREDITS (12): Ending / credits
+        // ============================================================
+        case MS_CREDITS:
+            if (!GameEnding1())
+                break;
+            sMainSeq = MS_TITLE;
+            sGameSeq = -4;
+            break;
+
+        default:
+            break;
         }
+
+        // Sound driver update after VBlank
+        // if (cVblkFlg && sMainSeq) m4aSoundMain();
 
         // Wait for next VBlank
         usIntrCheck &= ~1;
@@ -226,6 +459,10 @@ void AgbMain(void)
             asm volatile("SVC #2");
         } while ((usIntrCheck & 1) == 0);
     }
+
+    // Cleanup after main loop exit (full reset)
+    // SoundVSyncOff_rev01();
+    // if (ucAllReset == 2) Save_RamAllReset();
 }
 
 // ---- Interrupt Handlers ----

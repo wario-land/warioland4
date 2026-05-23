@@ -258,6 +258,11 @@ u8 FadeDec(u16 interval)
 // Builds OAM entries from sprite pattern tables into OamBuf.
 // Pattern format: [count:u16] [attr0, attr1, attr2] * count
 // Adds (x, y) pixel offsets to each sprite.
+//
+// GBA hardware OAM layout is 4 u16 (8 bytes) per OBJ entry:
+//   [0]=attr0, [1]=attr1, [2]=attr2, [3]=affineParam
+// This function writes attr0-attr2 and skips slot [3].
+// dst advances by 4 u16 per OBJ to match hardware spacing.
 u16 *SetObj(const u16 *src, u16 *dst, int x, int y)
 {
     int i, count;
@@ -273,7 +278,8 @@ u16 *SetObj(const u16 *src, u16 *dst, int x, int y)
         dst[0] = (a0 & 0xFF00) | ((a0 + y) & 0xFF);
         dst[1] = (a1 & 0xFE00) | ((a1 + x) & 0x1FF);
         dst[2] = a2;
-        dst += 3;
+        dst[3] = 0;          // affineParam slot (unused for non-affine OBJs)
+        dst += 4;            // 4 u16 per OBJ = 8 bytes = hardware OAM stride
     }
 
     if (dst > pObjEnd)
@@ -282,29 +288,114 @@ u16 *SetObj(const u16 *src, u16 *dst, int x, int y)
     return dst;
 }
 
-// Fill remaining OAM with disabled sprites and set DMA size.
+// Fill remaining OAM entries with offscreen sprites (Y=208 hides the OBJ
+// without using the disable bit, matching original game behavior).
+// Advances by 4 u16 per OBJ to match hardware OAM stride.
+// Sets uObjSize for DMA transfer in VBlank handler.
 void EndObj(u16 *dst)
 {
     while (dst < pObjEnd)
     {
-        *dst++ = 0xD0;  // Y=208 (offscreen), disabled
-        *dst++ = 0;
-        *dst++ = 0;
+        *dst = 0xD0;       // attr0: Y=208 (offscreen, not explicitly disabled)
+        dst[1] = 0;        // attr1: X=0
+        // attr2 and affineParam left unchanged (unused when OBJ is offscreen)
+        dst += 4;
     }
     uObjSize = (u32)pObjEnd - (u32)OamBuf;
 }
 
+// ---- SetObjPABCD: Write affine parameters for scaled/rotated OBJs ----
+// Computes pa, pb, pc, pd for GBA affine OBJ matrix and writes them
+// to OamBuf at consecutive OBJ affine slots (4th u16 per OBJ entry).
+//   index: base OBJ slot number (0, 4, 8, ...)
+//   angle: rotation angle index into sin_cos_table (0-255)
+//   scale_x, scale_y: fixed-point 1.8 scale factors (0x100 = 1.0)
+// Used by Scene4 for the car's shrink animation.
+void SetObjPABCD(int index, int angle, s16 scale_x, s16 scale_y)
+{
+    u16 *dst = (u16 *)OamBuf + index * 2;  // 32 bytes per affine group
+    s16 cosA, sinA, inv_sx, inv_sy;
+
+    angle &= 0xFF;
+    cosA = Cos(angle);
+    sinA = Sin(angle);
+    inv_sx = FixInverse(scale_x);
+    inv_sy = FixInverse(scale_y);
+
+    // pa (OBJ_n affine slot = dst index + 0, u16 offset 3)
+    dst[3] = FixMul(cosA, inv_sx);
+    dst += 4;  // next OBJ entry (4 u16 per OBJ)
+
+    // pb (OBJ_n+1 affine slot)
+    dst[3] = FixMul(sinA, inv_sx);
+    dst += 4;
+
+    // pc (OBJ_n+2 affine slot)
+    dst[3] = FixMul(-sinA, inv_sy);
+    dst += 4;
+
+    // pd (OBJ_n+3 affine slot)
+    dst[3] = FixMul(cosA, inv_sy);
+
+    // Update pObjEnd if we wrote past previous end
+    if (dst + 1 > pObjEnd)
+        pObjEnd = dst + 1;
+}
+
 // ---- Ending type resolution ----
 // Determines which ending cinematic to play based on treasure count.
+// Counts collected jewel pieces (ucKakera1-12GetFlg) to determine
+// usEndingType and sTreasureScale.
+//   Type 0: 0-1 treasures  — worst ending
+//   Type 1: 2-5 treasures  — bad ending
+//   Type 2: 6-11 treasures — good ending
+//   Type 3: 12 treasures   — best ending (all collected)
 static void GetEndingType(void)
 {
-    // ucPerfect flag is 1 when all 12 treasures collected (super hard)
-    // usEndingType 0-3 maps to different ending branch variations
-    usEndingType = 0;
+    int count = 0;
 
-    // Check treasure collection count
-    // The exact logic reads saved treasure flags; for now default to 0
-    // TODO: read from save data when saves are implemented
+    // Count collected jewel pieces from 12 stages
+    if (ucKakera1GetFlg)  count++;
+    if (ucKakera2GetFlg)  count++;
+    if (ucKakera3GetFlg)  count++;
+    if (ucKakera4GetFlg)  count++;
+    if (ucKakera5GetFlg)  count++;
+    if (ucKakera6GetFlg)  count++;
+    if (ucKakera7GetFlg)  count++;
+    if (ucKakera8GetFlg)  count++;
+    if (ucKakera9GetFlg)  count++;
+    if (ucKakera10GetFlg) count++;
+    if (ucKakera11GetFlg) count++;
+    if (ucKakera12GetFlg) count++;
+
+    usTreasureCount = count;
+
+    if (count > 1)
+    {
+        if (count > 5)
+        {
+            if (count > 11)
+            {
+                usEndingType = 3;
+                sTreasureScale = 384;
+            }
+            else
+            {
+                usEndingType = 2;
+                sTreasureScale = 288;
+            }
+        }
+        else
+        {
+            usEndingType = 1;
+            sTreasureScale = 224;
+        }
+    }
+    else
+    {
+        usEndingType = 0;
+        sTreasureScale = 160;
+    }
 }
 
 // ---- Init screen ----
@@ -559,11 +650,12 @@ static void Initialize(int seq)
     REG_DISPCNT = DISPCNT_MODE_0;
     bg_regs_init();
 
-    // Clear OAM
+    // Clear OAM — set all 128 OBJs to fully disabled (attr0 bit 9=1)
+    // Using 0x0200 ensures no leftover sprites from previous scenes
     uObjSize = 0;
     pObjEnd = (u16 *)OamBuf;
     {
-        volatile u32 a = 0xA0;  // disabled attribute (Y=160 = offscreen)
+        volatile u32 a = 0x02000200;  // attr0=0x0200 (disabled), attr1=0x0200
         REG_DMA3SAD = (u32)&a;
         REG_DMA3DAD = (u32)OAM;
         REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (128 * 8 >> 2);
@@ -571,14 +663,22 @@ static void Initialize(int seq)
 
     ob_param_init();
 
-    // Clear ALL BG screenbases (16-23) with blank tile 0x3FF
-    // This prevents noise tiles from previous scenes leaking through
-    // when the current scene's UnPackScreen doesn't cover every entry.
+    // Clear BG screenbases 16-23 with blank tile 0x3FF.
+    // This matches the original Init() at TL_INIT. The original game only
+    // does this once, but since our scene Init functions may not fully
+    // overwrite every screen entry, clearing here prevents noise tiles.
     {
         volatile u32 v = 0x03FF03FF;
         REG_DMA3SAD = (u32)&v;
         REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
         REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x4000 >> 2);
+    }
+    // Also clear OBJ VRAM to prevent leftover sprites from prior scenes
+    {
+        volatile u32 z = 0;
+        REG_DMA3SAD = (u32)&z;
+        REG_DMA3DAD = (u32)OBJ_VRAM0;
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x8000 >> 2);
     }
 
     usFadeTimer = 0;

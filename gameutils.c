@@ -18,6 +18,20 @@ IWRAM_DATA u8 ucWorldNumBak;
 
 IWRAM_DATA u8 ucEndingMessageKind;
 
+// Jewel piece collection flags
+IWRAM_DATA u8 ucKakera1GetFlg;
+IWRAM_DATA u8 ucKakera2GetFlg;
+IWRAM_DATA u8 ucKakera3GetFlg;
+IWRAM_DATA u8 ucKakera4GetFlg;
+IWRAM_DATA u8 ucKakera5GetFlg;
+IWRAM_DATA u8 ucKakera6GetFlg;
+IWRAM_DATA u8 ucKakera7GetFlg;
+IWRAM_DATA u8 ucKakera8GetFlg;
+IWRAM_DATA u8 ucKakera9GetFlg;
+IWRAM_DATA u8 ucKakera10GetFlg;
+IWRAM_DATA u8 ucKakera11GetFlg;
+IWRAM_DATA u8 ucKakera12GetFlg;
+
 
 // from g_map.h
 IWRAM_DATA u8 ucDisConFlg;

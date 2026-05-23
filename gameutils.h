@@ -21,6 +21,20 @@ extern u8 ucWorldNumBak; // 0x3000010
 
 extern u8 ucEndingMessageKind; // 0x3000011
 enum{ NORMAL_MESSAGE, ALL_GET_MESSAGE, SHARD_MESSAGE };
+
+// Jewel piece collection flags (save data, 0x3000c13-0x3000c3f)
+extern u8 ucKakera1GetFlg;
+extern u8 ucKakera2GetFlg;
+extern u8 ucKakera3GetFlg;
+extern u8 ucKakera4GetFlg;
+extern u8 ucKakera5GetFlg;
+extern u8 ucKakera6GetFlg;
+extern u8 ucKakera7GetFlg;
+extern u8 ucKakera8GetFlg;
+extern u8 ucKakera9GetFlg;
+extern u8 ucKakera10GetFlg;
+extern u8 ucKakera11GetFlg;
+extern u8 ucKakera12GetFlg;
 // NORMAL_MESSAGE: The bosses has returned. let's get 12 tresures chest this time.
 // ALL_GET_MESSAGE: The bosses has returned.
 // SHARD_MESSAGE: You can now play the S-Hard mode.

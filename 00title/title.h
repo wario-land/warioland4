@@ -98,6 +98,7 @@ void UnPackScreen(const u16 *src, vu16 *screen);
 void V_Wait(void);
 u16 *SetObj(const u16 *src, u16 *dst, int x, int y);
 void EndObj(u16 *dst);
+void SetObjPABCD(int index, int angle, s16 scale_x, s16 scale_y);
 
 // Blend / fade helpers
 void SetBLDDownMin(u16 bg);
@@ -167,5 +168,54 @@ void NewsEnd_Exec(int time);
 // Super hard message (super_hard.c)
 void SuperHard_Init(void);
 void SuperHard_Exec(int time);
+
+// ---- OBJ animation functions (title_anim.c) ----
+// Each maps a time value to an OBJ pattern table and returns TRUE on cycle completion
+
+// Scene 3: Headlight beam
+int scene3_Anime0(int time, const u16 **pattern);
+
+// Scene 4: Cat + car animations
+int scene4_Anime0(int time, const u16 **pattern);
+int scene4_Anime2(int time, const u16 **pattern);
+int scene4_Anime3(int time, const u16 **pattern);
+int scene4_Anime4(int time, const u16 **pattern);
+int scene4_Anime5(int time, const u16 **pattern);
+int scene4_Anime6(int time, const u16 **pattern);
+int scene4_Anime7(int time, const u16 **pattern);
+int scene4_Anime8(int time, const u16 **pattern);
+int scene4_Anime9(int time, const u16 **pattern);
+int scene4_Anime10(int time, const u16 **pattern);
+u16 *Scene4_SetCarObj(u16 *dst);
+
+// Pyramid: Wario animations
+int pyramid_Anime0(int time, const u16 **pattern);
+int pyramid_Anime1(int time, const u16 **pattern);
+int pyramid_Anime2(int time, const u16 **pattern);
+int pyramid_Anime3(int time, const u16 **pattern);
+
+// Scene 7: Cat and smoke animations
+int scene7_cat_Anime0(int time, const u16 **pattern);
+int scene7_cat_Anime1(int time, const u16 **pattern);
+int scene7_cat_Anime2(int time, const u16 **pattern);
+int scene7_smoke_Anime22(int time, const u16 **pattern);
+int scene7_smoke_Anime23(int time, const u16 **pattern);
+
+// Scene 8: Treasure room
+void scene8_Anime0(const u16 **pattern);
+
+// Wario4 car + UI animation functions
+int  scene5_Anime0(int time, const u16 **pattern);
+int  scene5_Anime1(int time, const u16 **pattern);
+int  scene5_Anime2(int time, const u16 **pattern);
+int  scene5_Anime6(int time, const u16 **pattern);
+int  scene5_Anime7(int time, const u16 **pattern);
+int  scene5_Anime9(int time, const u16 **pattern);
+int  scene5_Anime10(int time, const u16 **pattern);
+int  scene5_Anime11(int time, const u16 **pattern);
+int  scene5_Anime14(const u16 **pattern);
+int  scene5_Anime15(int time, const u16 **pattern);
+void scene5_Anime16(const u16 **pattern);
+void scene5_Tire(const u16 **pattern);
 
 #endif // TITLE_H

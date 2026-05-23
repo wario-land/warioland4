@@ -1,134 +1,109 @@
-// Scene 4: Highway + Cat — bitmap mode highway with OBJ animations
-// Scene 4: Highway + Cat — bitmap mode highway with OBJ animations
+// Scene 4: Highway + Cat — Mode 4 bitmap highway with OBJ animations
 //
-// Mode 4 bitmap background (highway scrolling)
-// OBJ: cat (multiple animation states), car (affine scaled), paper plane, buildings
+// Mode 4 provides a 240x160 8-bit indexed bitmap background (the highway).
+// OBJ sprites overlay the car, cat, paper plane, and buildings.
+//
+// Animation sequence (corrected from IDA decompilation):
+//   S4_0: Decompress bitmap + OBJ tiles to VRAM
+//   S4_1: Setup positions, darken, enable MODE_4 + OBJ + BG2
+//   S4_2: Cat runs from right (x=280) to center (x=119). Anime0. BG scrolls.
+//   S4_3: Cat crouching/idle. Anime2. (30 frames)
+//   S4_4: Cat looking around. Anime3. (30 frames)
+//   S4_5: Cat SHAKING. Anime10. Car shrinks from 2x → 0. Car palette fades.
+//   S4_6: Cat still shaking. Anime10 + paper floating (Anime8). Paper flies to cat.
+//   S4_7: Cat flies up with paper (Anime7, 63-frame loop)
+//   S4_8: Cat swooping. Anime9 + Anime5. Paper sinks every 4th frame.
+//   S4_9: Cat diving. Anime9 + Anime4.
+//   S4_10: Final dive. Anime9 + Anime6. Advances scene on completion.
 
 #include "../gba/gba.h"
 #include "../gameutils.h"
 #include "title.h"
 
-// ---- Scene4 data references ----
+// ---- Scene4 data ----
 extern const u16 scene4_bg_Palette[17];
-extern const u8  scene4_Bitmap[];
 extern const u16 scene4_obj_Palette[208];
 extern const u16 scene4_obj_Ending_cat_Palette[16];
+extern const u8  scene4_Bitmap[];
 extern const u8  scene4_obj_Char[];
 extern const u16 scene4_obj_bldg[];
 
-// Cat OBJ patterns (from scene4_cat_data.c)
-extern const u16 scene4_cat_000[];
-extern const u16 scene4_cat_001[];
-extern const u16 scene4_cat_002[];
-extern const u16 scene4_cat_003[];
-extern const u16 scene4_cat_005[];
-extern const u16 scene4_cat_006[];
-extern const u16 scene4_cat_009[];
-
-// Cat animation function — matches scene4_Anime0 from IDA (0x800BC0C)
-// Cycles through cat running frames 0-6 based on time % 72.
-// Returns TRUE when animation cycle completes (time % 72 == 71).
-static int CatAnime0(int time, const u16 **pattern)
-{
-    int t = time % 72;
-    if (t <= 5)       *pattern = scene4_cat_000;
-    else if (t <= 11)  *pattern = scene4_cat_001;
-    else if (t <= 17)  *pattern = scene4_cat_002;
-    else if (t <= 23)  *pattern = scene4_cat_003;
-    else if (t <= 29)  *pattern = scene4_cat_000;
-    else if (t <= 35)  *pattern = scene4_cat_005;
-    else if (t <= 41)  *pattern = scene4_cat_006;
-    else if (t <= 47)  *pattern = scene4_cat_003;
-    else if (t <= 53)  *pattern = scene4_cat_000;
-    else if (t <= 59)  *pattern = scene4_cat_001;
-    else if (t <= 65)  *pattern = scene4_cat_002;
-    else               *pattern = scene4_cat_003;
-    return (t == 71);
-}
-
-// Car OBJ patterns
-static const u16 scene4_obj_carL[] = {
-    1,
-    0x03C0, 0xC1C0, 0x1200,
-};
-static const u16 scene4_obj_carR[] = {
-    1,
-    0x03C0, 0xC1C0, 0x1208,
-};
-
-// ---- Global state references ----
+// ---- Global state ----
 extern u8   bEnding;
 extern u16  sLocalSeq;
 extern u32  uLocalTime;
 extern u32  uLocalTime2;
 extern s16  sWork0, sWork1, sWork2, sWork3;
 extern s16  bg_offset_x, bg_offset_y;
-extern s16  bg_pos_x, bg_pos_y;
 extern s16  bg_scale_x, bg_scale_y;
 extern u16  ob_pos_x, ob_pos_y;
-extern u16  ob_rotate;
 extern u16  ob_scale_x, ob_scale_y;
 extern u16  ob_palette, ob_priority;
-extern u16  ob_affine;
 extern u16  uEVY;
 extern u16 *pObjEnd;
 extern u32  uObjSize;
 
 void Scene4_Init(void)
 {
-    // Copy BG palette (17 entries) for mode 4
+    // === BG palette (17 entries) → BG_PLTT (Mode 4 bitmap palette) ===
+    // From IDA disassembly: DMA_16BIT, count=17 halfwords (0x80000011)
     REG_DMA3SAD = (u32)scene4_bg_Palette;
     REG_DMA3DAD = (u32)BG_PLTT;
-    REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (17*2 >> 2);
+    REG_DMA3CNT = ((DMA_ENABLE | DMA_16BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | 17;
 
-    // Copy OBJ palette (208 entries)
+    // === OBJ palette (208 entries) → OBJ_PLTT ===
+    // From IDA disassembly: DMA_16BIT, count=208 halfwords (0x800000D0)
     REG_DMA3SAD = (u32)scene4_obj_Palette;
     REG_DMA3DAD = (u32)OBJ_PLTT;
-    REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (208*2 >> 2);
+    REG_DMA3CNT = ((DMA_ENABLE | DMA_16BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | 208;
 
-    // If ending mode, copy alternative cat palette (16 entries to palette row 2)
+    // Ending mode: alternative cat palette at OBJ row 4 (offset 0x40)
     if (bEnding)
     {
         REG_DMA3SAD = (u32)scene4_obj_Ending_cat_Palette;
-        REG_DMA3DAD = (u32)((u16 *)OBJ_PLTT + 32);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (16*2 >> 2);
+        REG_DMA3DAD = (u32)((u16 *)OBJ_PLTT + 32);  // 32 halfwords = row 4
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_16BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | 16;
     }
 
-    // Clear bitmap top/bottom margins with zero (index 0)
-    // Top: lines 0 to (160-128)/2 * 240 = 16*240 = 3840 pixels
-    // Bottom: same area
+    // === Clear Mode 4 framebuffer edges (matching IDA disassembly) ===
+    // Clear VRAM+0x0000 (3840 bytes = top 16 lines of frame 0)
+    // Clear VRAM+0x8700 (3840 bytes = bottom 16 lines of frame 0)
+    // DMA_16BIT, SRC_FIXED, count=1920 halfwords (0x81000780)
     {
-        volatile u32 z = 0;
+        volatile u16 z = 0;
         REG_DMA3SAD = (u32)&z;
         REG_DMA3DAD = (u32)BG_VRAM;
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (3840 >> 2);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_16BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | 1920;
+    }
+    {
+        volatile u16 z = 0;
         REG_DMA3SAD = (u32)&z;
-        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 3840 + 128*240);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (3840 >> 2);
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8700);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_16BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | 1920;
     }
 
-    // Initial OBJ affine position: center-left for car
+    // Car OBJ initial affine params
     ob_pos_x = 88;
     ob_pos_y = 120;
-    ob_scale_x = 0x200;  // 2.0x scale
+    ob_scale_x = 0x200;   // 2.0x
     ob_scale_y = 0x200;
 
-    // m4aMPlayVolumeControl for lower volume in non-ending
-    // m4aSongNumStartOrChange(440);  // Wind sound effect, TODO
-
-    // Display: Mode 4, BG2 enabled at init
     REG_DISPCNT = DISPCNT_MODE_4;
 }
 
 void Scene4_Exec(int time)
 {
     u16 *dst;
-    int i;
+    const u16 *cat_pattern = 0;
+    const u16 *paper_pattern = 0;
+    int done;
 
     switch (sLocalSeq)
     {
-    case 0:  // Decompress bitmap to BG_VRAM+0xF00 (skip top 16 lines), OBJ tiles
-        // Mode 4 uses OBJ_VRAM1 (0x6014000), not OBJ_VRAM0 (0x6010000)
+    case 0:
+        // === S4_0: Decompress bitmap + OBJ tiles ===
+        // Bitmap → BG_VRAM + 0xF00 (skip 16-line top margin)
+        // OBJ tiles → OBJ_VRAM1 (0x6014000 — Mode 4 uses VRAM 0-0x13FFF for bitmap)
         LZ77UnCompVram((const u32 *)scene4_Bitmap,
                        (void *)((u8 *)BG_VRAM + 16 * 240));
         LZ77UnCompVram((const u32 *)scene4_obj_Char, (void *)OBJ_VRAM1);
@@ -136,21 +111,19 @@ void Scene4_Exec(int time)
         sLocalSeq++;
         break;
 
-    case 1:  // Setup positions, darken to max, enable MODE_4 + OBJ + BG2
+    case 1:
+        // === S4_1: Setup, darken, enable display ===
         V_Wait();
 
-        // Cat initial position (walks from right: x=280, y=144)
+        // Cat starts at far right
         sWork0 = 280;
         sWork1 = 144;
 
-        // BG vertical reference offset starts at -8
+        // BG vertical offset starts at -8 (scrolls down during animation)
         bg_offset_y = -8;
 
-        // Max brightness darken (screen black)
-        uEVY = 16;
-        REG_BLDY = 16;
-        REG_BLDCNT = BLDCNT_TGT1_BD | BLDCNT_TGT1_OBJ | BLDCNT_TGT1_BG2
-                   | BLDCNT_EFFECT_DARKEN;
+        // Max darken: screen starts black
+        SetBLDDownMax(BLDCNT_TGT1_BD | BLDCNT_TGT1_OBJ | BLDCNT_TGT1_BG2);
 
         REG_DISPCNT = DISPCNT_MODE_4 | DISPCNT_OBJ_ON | DISPCNT_BG2_ON;
 
@@ -158,15 +131,12 @@ void Scene4_Exec(int time)
         uLocalTime = 0;
         break;
 
-    case 2:  // Fade in, cat runs left, BG scrolls. Matches IDA S4_1
+    case 2:
+        // === S4_2: Cat runs from right, BG scrolls (Anime0) ===
         FadeDec(15);
         uLocalTime++;
 
-        // Cat running animation — uses global 'time' (usFadeTimer), not uLocalTime
-        {
-            const u16 *pat;
-            CatAnime0(time, &pat);
-        }
+        scene4_Anime0(time, &cat_pattern);
 
         // BG scroll at specific frames
         switch (uLocalTime)
@@ -177,43 +147,43 @@ void Scene4_Exec(int time)
             break;
         }
 
-        // Cat moves left on odd frames (IDA: (uLocalTime & 1) == 0 → skip on even)
-        if ((uLocalTime & 1) && (--sWork0 == 119))
-        {
-            sLocalSeq++;
-            uLocalTime = 0;
-            // m4aSongNumStartOrChange(441);  // BGM change, TODO
-            uLocalTime2 = 0;
-            REG_BLDY = 3;
-            REG_BLDCNT = BLDCNT_EFFECT_LIGHTEN | BLDCNT_TGT1_BD
-                        | BLDCNT_TGT1_OBJ | BLDCNT_TGT1_BG2;
-        }
+        // Cat moves left every odd frame. Stops at x=120 (center).
+        // wl4leaks: s4_cat_x-- == LCD_CENTER_X (post-decrement, compare to 120)
+        if ((uLocalTime & 1) == 0)
+            break;
+        if (sWork0-- != 120)
+            break;
+
+        // Cat reached center: advance state
+        sLocalSeq++;
+        uLocalTime = 0;
+        uLocalTime2 = 0;
+        REG_BLDY = 3;
+        REG_BLDCNT = BLDCNT_EFFECT_LIGHTEN | BLDCNT_TGT1_BD
+                    | BLDCNT_TGT1_OBJ | BLDCNT_TGT1_BG2;
         break;
 
-    case 3:  // Cat pose 2
-        uLocalTime++;
-        if (uLocalTime > 30)
-        {
-            sLocalSeq++;
-            uLocalTime = 0;
-        }
+    case 3:
+        // === S4_3: Cat crouching/idle (Anime2, 30+ frames) ===
+        done = scene4_Anime2(uLocalTime++, &cat_pattern);
+        if (done) { sLocalSeq++; uLocalTime = 0; }
         break;
 
-    case 4:  // Cat pose 3
-        uLocalTime++;
-        if (uLocalTime > 30)
-        {
-            sLocalSeq++;
-            uLocalTime = 0;
-        }
+    case 4:
+        // === S4_4: Cat looking around (Anime3, 30+ frames) ===
+        done = scene4_Anime3(uLocalTime++, &cat_pattern);
+        if (done) { sLocalSeq++; uLocalTime = 0; }
         break;
 
-    case 5:  // Cat shaking, palette change, shrink
-        // Adjust car palette toward minimum every 4th frame
+    case 5:
+        // === S4_5: Cat SHAKING (Anime10), car shrinks, car palette fades ===
+        scene4_Anime10(time, &cat_pattern);
+
+        // Car palette decreases every 4th frame
         if ((uLocalTime & 3) == 3 && ob_palette > 4)
             ob_palette--;
 
-        // Shrink OBJ from 2x to near 0
+        // Car shrinks from 2x to near 0
         if (ob_scale_x > 0x10)
         {
             ob_scale_x -= 0x10;
@@ -221,81 +191,82 @@ void Scene4_Exec(int time)
         }
         else
         {
-            ob_priority = 3;  // OBJ behind BG
-            // Move down every 8th frame
-            if (ob_pos_y > 127)
+            // Car has shrunk: drop OBJ behind BG
+            ob_priority = 3;
+            // Move car downward if still on screen
+            if (ob_pos_y < 128)
             {
+                if ((uLocalTime & 7) == 7)
+                    ob_pos_y++;
+            }
+            else
+            {
+                // Car offscreen: paper plane flies toward cat
                 sLocalSeq++;
-                uLocalTime = 0;
+                uLocalTime = -1;
                 sWork2 = sWork0 - 60;
                 sWork3 = sWork1 + 60;
-            }
-            else if ((uLocalTime & 7) == 7)
-            {
-                ob_pos_y++;
             }
         }
         uLocalTime++;
         break;
 
-    case 6:  // Paper plane moves toward cat
-        uLocalTime++;
+    case 6:
+        // === S4_6: Cat shaking (Anime10) + paper floats (Anime8) toward cat ===
+        scene4_Anime10(time, &cat_pattern);
+        scene4_Anime8(uLocalTime++, &paper_pattern);
+
+        // Paper flies diagonally toward cat
         if (sWork2 < sWork0) sWork2++;
         if (sWork3 > sWork1) sWork3--;
         if (sWork2 == sWork0 && sWork3 == sWork1)
         {
             sLocalSeq++;
             uLocalTime = 0;
-            // m4aSongNumStartOrChange(442);  // Newspaper sound, TODO
         }
         break;
 
-    case 7:  // Cat flying
-        uLocalTime++;
-        if (uLocalTime > 40)
+    case 7:
+        // === S4_7: Cat flies up with paper (Anime7, 63-frame cycle) ===
+        done = scene4_Anime7(uLocalTime++, &cat_pattern);
+        if (done) { sLocalSeq++; uLocalTime = 0; sWork3 -= 2; }
+        break;
+
+    case 8:
+        // === S4_8: Cat swooping — Anime9(paper glide) + Anime5(cat flying) ===
+        // Paper Y sinks every 4th frame
         {
-            sLocalSeq++;
-            uLocalTime = 0;
-            sWork3 -= 2;
+            int tClamped = (uLocalTime > 54) ? 54 : uLocalTime;
+            scene4_Anime9(tClamped, &paper_pattern);
         }
+        if ((uLocalTime & 3) == 3) sWork3++;
+        done = scene4_Anime5(uLocalTime++, &cat_pattern);
+        if (done) { sLocalSeq++; uLocalTime = 0; }
         break;
 
-    case 8:  // Cat swooping (paper sinks)
-        i = (uLocalTime > 54) ? 54 : uLocalTime;
-        if ((uLocalTime & 3) == 3)
-            sWork3++;
-        uLocalTime++;
-        if (uLocalTime > 30)
-        {
-            sLocalSeq++;
-            uLocalTime = 0;
-        }
+    case 9:
+        // === S4_9: Cat diving — Anime9(paper glide) + Anime4(cat catching) ===
+        scene4_Anime9(54, &paper_pattern);
+        done = scene4_Anime4(uLocalTime++, &cat_pattern);
+        if (done) { sLocalSeq++; uLocalTime = 0; }
         break;
 
-    case 9:  // Cat diving (paper still)
-        uLocalTime++;
-        if (uLocalTime > 30)
-        {
-            sLocalSeq++;
-            uLocalTime = 0;
-        }
-        break;
-
-    case 10:  // Cat finale
-        uLocalTime++;
-        if (uLocalTime > 40)
-            sGameSeq++;
+    case 10:
+        // === S4_10: Final dive — Anime9 + Anime6 ===
+        scene4_Anime9(54, &paper_pattern);
+        done = scene4_Anime6(uLocalTime++, &cat_pattern);
+        if (done) sGameSeq++;
         break;
     }
 
-    // ---- BG zoom-in effect ----
+    // ---- BG zoom-in after car shrinks ----
     if (sLocalSeq > 4 && (time & 15) == 15 && bg_scale_x <= 0x11F)
     {
         bg_scale_x++;
         bg_scale_y++;
     }
 
-    // ---- Brightness sequence for cat scene (uLocalTime2 based) ----
+    // ---- Brightness sequence (uLocalTime2-based, starts in S4_3+) ----
     if (sLocalSeq > 2)
     {
         switch (uLocalTime2)
@@ -305,7 +276,7 @@ void Scene4_Exec(int time)
         case 45:  REG_BLDY = 6;  break;
         case 61:  REG_BLDY = 7;  break;
         case 77:  REG_BLDY = 8;  break;
-        case 78:  REG_BLDY = 16; break;
+        case 78:  REG_BLDY = 16; break;   // Flash!
         case 81:  REG_BLDY = 15; break;
         case 84:  REG_BLDY = 14; break;
         case 87:  REG_BLDY = 13; break;
@@ -326,78 +297,33 @@ void Scene4_Exec(int time)
         uLocalTime2++;
     }
 
-    // ---- OBJ rendering ----
-    dst = (u16 *)OamBuf;
-
-    // Only render after display enabled
-    if (sLocalSeq > 1)
+    // ---- OBJ rendering (matching IDA Scene4_Exec) ----
+    if (sLocalSeq >= 2)
     {
-        // Cat OBJ — running animation with cycle frames
-        {
-            const u16 *cat_pattern = 0;
-            if (sLocalSeq == 5)
-            {
-                // Cat shaking (scene4_Anime10 in original)
-                cat_pattern = scene4_cat_009;
-            }
-            else if (sLocalSeq >= 2)
-            {
-                // Cat running animation — use global time (matches IDA scene4_Anime0(a1, ...))
-                CatAnime0(time, &cat_pattern);
-            }
+        dst = (u16 *)OamBuf;
 
-            if (cat_pattern)
-                dst = SetObj(cat_pattern, dst, sWork0, sWork1 - bg_offset_y);
-        }
-        // Car OBJ: left half (visible before cat when shrinking)
+        // Update affine params for car sprite scaling (no rotation)
+        SetObjPABCD(0, 0, ob_scale_x, ob_scale_y);
+
+        // Car OBJ: rendered in front of cat when scale > 0x80,
+        // behind cat when scale < 0x80
         if (sLocalSeq == 5 && ob_scale_x > 0x80)
-        {
-            int x, y, offsetLR, offsetX;
-            u16 pal = (ob_palette << 12) | (ob_priority << 10);
+            dst = Scene4_SetCarObj(dst);
 
-            offsetLR = (s16)((s32)64 * ob_scale_x / 256);
-            offsetX = (64 - offsetLR) / 2;
+        // Paper plane (rendered after cat takes off, S4_5+)
+        if (sLocalSeq > 5 && paper_pattern)
+            dst = SetObj(paper_pattern, dst, sWork2, sWork3);
 
-            x = ob_pos_x + offsetX;
-            y = ob_pos_y;
+        // Cat OBJ
+        if (cat_pattern)
+            dst = SetObj(cat_pattern, dst, sWork0, sWork1 - bg_offset_y);
 
-            // Car left half
-            dst = SetObj(scene4_obj_carL, dst, x, y);
-            dst[-1] = (dst[-1] & 0x3FF) | pal;
-
-            // Car right half
-            dst = SetObj(scene4_obj_carR, dst, x + offsetLR, y);
-            dst[-1] = (dst[-1] & 0x3FF) | pal;
-        }
-
-        // Paper plane OBJ (after cat hitches a ride)
-        if (sLocalSeq > 5)
-        {
-            // Paper OBJ placeholder — would be scene4 paper pattern
-            // For now, use building OBJ at paper position
-        }
-
-        // Building OBJ (static background overlay)
-        dst = SetObj(scene4_obj_bldg, dst, 120, 96 + bg_offset_y);
-
-        // Car OBJ: left half (behind cat when shrunk)
+        // Car OBJ: behind cat when shrunk
         if (sLocalSeq == 5 && ob_scale_x < 0x80)
-        {
-            int x, y, offsetLR, offsetX;
-            u16 pal = (ob_palette << 12) | (ob_priority << 10);
+            dst = Scene4_SetCarObj(dst);
 
-            offsetLR = (s16)((s32)64 * ob_scale_x / 256);
-            offsetX = (64 - offsetLR) / 2;
-
-            x = ob_pos_x + offsetX;
-            y = ob_pos_y;
-
-            dst = SetObj(scene4_obj_carL, dst, x, y);
-            dst[-1] = (dst[-1] & 0x3FF) | pal;
-
-            dst = SetObj(scene4_obj_carR, dst, x + offsetLR, y);
-            dst[-1] = (dst[-1] & 0x3FF) | pal;
-        }
+        // Building OBJ overlay (always visible)
+        dst = SetObj(scene4_obj_bldg, dst, 120, bg_offset_y + 96);
 
         EndObj(dst);
     }

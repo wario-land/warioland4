@@ -51,10 +51,11 @@ extern const u16 scene5_obj_Palette[96];
 extern const u8  scene5_obj_Char[];
 extern const u16 scene5_car_Palette[256];
 
-// OBJ pattern tables (from wario4_obj_data.c)
+// OBJ pattern tables (from wario4_scene_data.c)
 extern const u16 scene5_026[], scene5_027[], scene5_028[];  // car frames
 extern const u16 scene5_030[], scene5_031[], scene5_032[];  // smoke
 extern const u16 scene5_02F[];  // PUSH START text
+extern const u16 scene5_00B[], scene5_00C[], scene5_00D[];  // hand cursor
 
 // Global state variables (defined in title.c, IWRAM_DATA)
 extern s16 sWork0, sWork1, sWork2, sWork3, sWork4, sWork5;
@@ -99,12 +100,18 @@ void Wario4_Init(void)
 {
     if (bQuickStart)
     {
-        // Clear VRAM, palette, blank tiles, screenbases — same as base Init()
+        // Clear full BG VRAM and OBJ VRAM: prevents leftovers from previous scene
         {
             volatile u32 z = 0;
             REG_DMA3SAD = (u32)&z;
             REG_DMA3DAD = (u32)PLTT;
             REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (PLTT_SIZE >> 2);
+        }
+        {
+            volatile u32 z = 0;
+            REG_DMA3SAD = (u32)&z;
+            REG_DMA3DAD = (u32)OBJ_VRAM0;
+            REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x4000 >> 2);
         }
         {
             volatile u32 f = 0x03FF03FF;
@@ -271,6 +278,15 @@ void Wario4_Exec(int time)
             REG_DISPSTAT = (REG_DISPSTAT & 0xFF) | (151 << 8) | DISPSTAT_VCOUNT_INTR;
             REG_IE |= INTR_FLAG_VCOUNT;
             sLocalSeq++;
+        }
+
+        // Clear OBJ VRAM before decompressing new OBJ tiles.
+        // Prevents leftover sprite tiles from previous scenes appearing.
+        {
+            volatile u32 z = 0;
+            REG_DMA3SAD = (u32)&z;
+            REG_DMA3DAD = (u32)OBJ_VRAM0;
+            REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x4000 >> 2);
         }
 
         REG_DISPCNT = DISPCNT_MODE_0
@@ -497,40 +513,49 @@ void Wario4_Exec(int time)
         break;
     }
 
-    // ---- BG parallax scrolling (all states) ----
-    // Each BG scrolls horizontally at different rates for depth parallax.
-    // Vertical scrolling is NOT set here (BG0VOFS is controlled by VCOUNT handler
-    // during night scene, or locked at final position after transition).
-    // Matches IDA: BG1HOFS = -4*time, BG2HOFS = -(time>>3), BG3HOFS = -(time>>4)
+    // ---- BG parallax scrolling (all states, matches IDA) ----
     REG_BG1HOFS = -(time << 2);         // -4 * time  (fastest)
     REG_BG2HOFS = -(s16)(time >> 3);    // -time/8   (medium)
     REG_BG3HOFS = -(s16)(time >> 4);    // -time/16  (slowest)
 
-    // ---- OBJ sprite rendering ----
-    // Renders car, smoke, and PUSH START text as OBJ sprites.
-    // pObjEnd is set once by Initialize() to OamBuf base.
-    // Each SetObj advances dst and updates pObjEnd if higher.
-    // EndObj fills remaining entries with disabled sprites.
+    // ---- OBJ sprite rendering (matching IDA Wario4_Exec) ----
+    // Uses SetObj with position offsets: car at (sWork2, sWork1),
+    // smoke at (sWork0, 76), cursor/text at (74, 76).
+    // Original calls scene5_car_move (complex multi-part car) and
+    // scene5_Anime15-18 for animation patterns.
     {
         u16 *dst = (u16 *)OamBuf;
-        pObjEnd = (u16 *)OamBuf;
+        const u16 *pattern;
 
-        // Car sprite (visible during states 2-10)
+        // Car + smoke: visible during states 2-10
         if (sLocalSeq >= 2 && sLocalSeq <= 10)
         {
-            dst = SetObj(scene5_026, dst, 148, sWork1);
-            // Smoke from car exhaust
-            dst = SetObj(scene5_030, dst, 212, 150);
+            // Car body at (sWork2, sWork1) with affine params
+            SetObjPABCD(0, 0, 0x100, 0x100);  // identity matrix
+
+            // Animate car body (scene5_Anime15: 42-frame cycle)
+            scene5_Anime15(time, &pattern);
+            dst = SetObj(pattern, dst, sWork2, sWork1);
+
+            // Smoke exhaust at (sWork0, 76) — scene5_Anime16 pattern
+            scene5_Anime16(&pattern);
+            dst = SetObj(pattern, dst, sWork0, 76);
         }
 
-        // PUSH START text (visible during state 7+)
+        // PUSH START hand cursor: visible during state 7
+        if (sLocalSeq == 7)
+        {
+            scene5_Anime6(time, &pattern);
+            dst = SetObj(pattern, dst, 74, 76);
+        }
+
+        // PUSH START text: visible during state 7+
         if (sLocalSeq >= 7)
         {
-            dst = SetObj(scene5_02F, dst, 109, 76);
+            scene5_Anime7(time, &pattern);
+            dst = SetObj(pattern, dst, 74, 76);
         }
 
-        // EndObj fills from dst to pObjEnd with disabled entries,
-        // then sets uObjSize for the VBlank DMA
         EndObj(dst);
     }
 
