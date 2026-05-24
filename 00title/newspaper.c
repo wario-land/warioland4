@@ -173,7 +173,7 @@ void Newspaper_Exec(int time)
         {
             bg_scroll_y++;
         }
-        REG_BG2VOFS = bg_scroll_y;
+        REG_BG1VOFS = bg_scroll_y;  // cat shadow layer scrolls down from top
         break;
 
     case 4:

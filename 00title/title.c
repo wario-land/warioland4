@@ -664,21 +664,15 @@ static void Initialize(int seq)
     ob_param_init();
 
     // Clear BG screenbases 16-23 with blank tile 0x3FF.
-    // This matches the original Init() at TL_INIT. The original game only
-    // does this once, but since our scene Init functions may not fully
-    // overwrite every screen entry, clearing here prevents noise tiles.
+    // Match original Init() behavior — only done at TSEQ_INIT, not between scenes.
+    // NOTE: Do NOT clear OBJ VRAM here. Scene4's car tiles rely on
+    // leftover BG tile data from Scene3 at 0x6010000 wrapping into the
+    // OBJ character block via GBA address mirroring in bitmap mode.
     {
         volatile u32 v = 0x03FF03FF;
         REG_DMA3SAD = (u32)&v;
         REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
         REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x4000 >> 2);
-    }
-    // Also clear OBJ VRAM to prevent leftover sprites from prior scenes
-    {
-        volatile u32 z = 0;
-        REG_DMA3SAD = (u32)&z;
-        REG_DMA3DAD = (u32)OBJ_VRAM0;
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x8000 >> 2);
     }
 
     usFadeTimer = 0;

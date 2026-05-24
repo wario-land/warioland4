@@ -33,7 +33,7 @@ endif
 .OFILES		=	$(.SFILES:.s=.o) $(.CFILES:.c=.o)
 
 ASFLAGS		=	-mthumb-interwork
-CFLAGS		=	-g -c -O2 -mthumb-interwork -nostdlib -fno-common -DNDEBUG
+CFLAGS		=	-g -c -O2 -mthumb -mthumb-interwork -nostdlib -fno-common -DNDEBUG
 LDFLAGS		+=	-Map $(MAPFILE) -nostartfiles \
 				-T ld_script.ld
 
