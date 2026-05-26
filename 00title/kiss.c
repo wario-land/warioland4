@@ -1,9 +1,9 @@
-// Kiss scene — Princess and Wario with rose background
+// Kiss scene -- Princess and Wario with rose background
 //
-// BG0: 512x256 — princess sprite (varies by ending type)
-// BG1: 256x256 — wario sprite
-// BG2: 256x256 — rose background
-// BG3: 256x256 — background content
+// BG0: 512x256 -- princess sprite (varies by ending type)
+// BG1: 256x256 -- wario sprite
+// BG2: 256x256 -- rose background
+// BG3: 256x256 -- background content
 //
 // Ending type determines which sprites are shown:
 //   type 0: princess1 + wario_unhappy (bad ending)
@@ -58,19 +58,35 @@ extern u16 *pObjEnd;
 extern u32 uObjSize;
 
 // VRAM layout constants matching IDA:
-// BG0: screenbase 16 (0x8000) — princess — tiles at VRAM+0x780*32 (tile 0x780)
-// BG1: screenbase 18 (0x9000) — wario — tiles at VRAM base (charbase 0)
-// BG2: screenbase 19 (0x9800) — rose
-// BG3: screenbase 20 (0xA000) — background
+// BG0: screenbase 16 (0x8000) -- princess -- tiles at VRAM+0x780*32 (tile 0x780)
+// BG1: screenbase 18 (0x9000) -- wario -- tiles at VRAM base (charbase 0)
+// BG2: screenbase 19 (0x9800) -- rose
+// BG3: screenbase 20 (0xA000) -- background
 // BG tiles: princess at VRAM+0x780*32, wario at VRAM+0x0000
 void Kiss_Init(void)
 {
-    // 1) Load princess palette to OBJ palette row 0
-    REG_DMA3SAD = (u32)kiss_princess_Palette;
-    REG_DMA3DAD = (u32)OBJ_PLTT;           // OBJ palette row 0
+    // 1) Load Wario palette to BG palette row 0 (BG_PLTT + 0*16)
+    // Matches IDA: kiss_wario_Palette -> BG_PLTT, control 0x80000010
+    REG_DMA3SAD = (u32)kiss_wario_Palette;
+    REG_DMA3DAD = (u32)(BG_PLTT + 0 * 16);
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (16*2 >> 2);
 
-    // 2) Decompress princess/Wario tiles based on ending type
+    // 2) Load princess palette to BG palette row 1 (BG_PLTT + 1*16 = BG_PLTT + 0x20)
+    // Matches IDA: DMA to MEMORY[0x5000020] = BG_PLTT + 32 bytes = row 1
+    REG_DMA3SAD = (u32)kiss_princess_Palette;
+    REG_DMA3DAD = (u32)(BG_PLTT + 1 * 16);
+    REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (16*2 >> 2);
+
+    // 3) Fill screenbases 16-20 with blank tile 0x3FF (10240 bytes = 5 screenblocks)
+    // Matches IDA: 0x3FF03FF -> 0x6008000, control 0x85000A00
+    {
+        volatile u32 p = 0x03FF03FF;
+        REG_DMA3SAD = (u32)&p;
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x2800 >> 2);
+    }
+
+    // 4) Decompress princess/Wario tiles based on ending type
     // Princess tiles go to VRAM+0x780*32 (BG0 uses charbase 0, tiles from 0x780)
     // Wario tiles go to VRAM base (BG1 uses charbase 0)
     // Wario tilemap goes to screenbase 18 (0x9000)
@@ -107,18 +123,19 @@ void Kiss_Init(void)
         UnPackScreen((const u16 *)kiss_wario_happy, (vu16 *)((u8 *)BG_VRAM + 0x9000));
     }
 
-    // 3) Load rose BG palette to OBJ palette row 14
+    // 5) Load rose BG palette to BG palette row 14 (BG_PLTT + 14*16 = BG_PLTT + 0x1C0)
+    // Matches IDA: DMA to MEMORY[0x50001C0] = BG_PLTT + 448 bytes = row 14
     REG_DMA3SAD = (u32)kiss_bg_Palette;
-    REG_DMA3DAD = (u32)(OBJ_PLTT + 14 * 16); // offset 14*16 entries = row 14
+    REG_DMA3DAD = (u32)(BG_PLTT + 14 * 16);
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (32*2 >> 2);
 
-    // 4) Rose BG tiles → VRAM+0x780*32 (same charblock as princess)
+    // 4) Rose BG tiles -> VRAM+0x780*32 (same charblock as princess)
     LZ77UnCompVram((const u32 *)kiss_bg_Char, (void *)((u8 *)BG_VRAM + 0x780 * 32));
 
-    // 5) Rose tilemap → BG2 screenbase 19 (0x9800)
+    // 5) Rose tilemap -> BG2 screenbase 19 (0x9800)
     UnPackScreen((const u16 *)kiss_bg_rose, (vu16 *)((u8 *)BG_VRAM + 0x9800));
 
-    // 6) Decompress BG3 background content → BG3 screenbase 20 (0xA000)
+    // 6) Decompress BG3 background content -> BG3 screenbase 20 (0xA000)
     LZ77UnCompVram((const u32 *)kiss_bg, (void *)((u8 *)BG_VRAM + 0xA000));
 
     // 7) Load OBJ palette (petals/sparkles)

@@ -11,12 +11,15 @@
 #include "08demo/demo.h"
 #include "09ready/ready.h"
 #include "10delete/delete.h"
+#include "save/save.h"
 #include "12ending/ending.h"
 
 static void VBlankIntr(void);
 static void HBlankIntr(void);
 static void VCountIntr(void);
 static void IntrDummy(void);
+static void SetIntrFunc(void);
+static void DefaultVblkFunc(void);
 
 const IntrFunc gInterruptVectorTable[] =
 {
@@ -51,21 +54,91 @@ void ResetKey()
         sMainSeq = MS_RESET;
 }
 
+// ---- KeyReset: Soft reset triggered by A+B+Select+Start ----
+// Matches IDA KeyReset at 0x80010ac.
+// Reinitializes most of the system (IWRAM, interrupts, save data, sound)
+// without going through the full cold-boot path (cartridge init, WAITCNT).
+// Returns the game to the title screen.
 void KeyReset(void)
 {
-    // Wait for all keys released, then return to title
-    // Called from MS_RESET handler
+    // Stop all sound and disable sound VSync
+    // SoundVSyncOff_rev01();       // TODO: sound
+    // m4aMPlayAllStop();           // TODO: sound
+
+    // Disable VCount and HBlank interrupts
+    REG_DISPSTAT &= ~DISPSTAT_VCOUNT_INTR;
+    REG_IE &= ~INTR_FLAG_HBLANK;
+
+    // Force darken blend on all layers, display off
+    REG_BLDCNT = 0xFF;
+    REG_DISPCNT = 0;
+    REG_MOSAIC = 0x10;
+
+    // Disable all interrupts during reinit
+    REG_IME = 0;
+
+    // Clear IWRAM (same as AllReset: 0x3000000, 0x1F80 32-bit words)
+    {
+        volatile u32 v = 0;
+        REG_DMA3SAD = (u32)&v;
+        REG_DMA3DAD = (u32)IWRAM_START;
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x1F80);
+    }
+
+    // Reinit interrupt handler code in IWRAM
+    SetIntrFunc();
+    SetVblkFunc(DefaultVblkFunc);
+
+    // Reinit sound driver
+    // m4aSoundInit();              // TODO: sound
+    // SoundMode_rev01(0x900000);   // TODO: sound
+
+    REG_IME = 1;
+
+    // SoundVSyncOff_rev01();       // TODO: sound
+
+    // Reinit save data from SRAM
+    GroundSave_INIT_Read();
+    GameReady_INIT_Read();
+
+    // Reset to title screen
+    sMainSeq = MS_TITLE;
+    sGameSeq = 0;
+    usCont = 0;
+    usCont2 = 0;
+    usTrg = 0;
+
+    // SoundVSyncOn_rev01();        // TODO: sound
 }
 
 // ---- Hardware Initialization ----
 
-static void ClearGraphicRam(void)
+// ---- Default VBlank handler (empty, matches IDA fnc at 0x800102c) ----
+// Screens replace this with their own handler via SetVblkFunc().
+static void DefaultVblkFunc(void)
 {
-    // Clear palette RAM using DMA
-    volatile u32 z = 0;
-    REG_DMA3SAD = (u32)&z;
-    REG_DMA3DAD = (u32)PLTT;
-    REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (PLTT_SIZE >> 2);
+}
+
+// ---- SetIntrFunc: Copy interrupt handler code from ROM to IWRAM ----
+// Matches IDA SetIntrFunc at 0x8000258.
+// GBA interrupt handlers must run from IWRAM because ROM bus timing
+// is incompatible with interrupt latency requirements.
+// DMA-copies intr_main (ROM) -> IntrMainBuf (IWRAM), then writes
+// IntrMainBuf address to 0x3007FFC for the BIOS interrupt dispatcher.
+//
+// NOTE: Our interrupt system uses a different approach (direct handler
+// table via gInterruptVectorTable). The DMA copy of intr_main is skipped
+// for now since we don't use the BIOS interrupt dispatcher path.
+// SetIntrFunc -- Stub matching IDA at 0x8000258.
+// The original copies intr_main code from ROM to IntrMainBuf via DMA,
+// then writes IntrMainBuf address to 0x3007FFC for the BIOS dispatcher.
+//
+// Our interrupt system uses crt0.s Sub_IRQ_Handler -> gInterruptVectorTable
+// instead of the BIOS dispatch path. crt0.s already writes Sub_IRQ_Handler
+// to 0x3007FFC at boot. We must NOT overwrite it with an empty buffer.
+static void SetIntrFunc(void)
+{
+    // Intentionally empty -- crt0.s handles interrupt vector setup.
 }
 
 void AllReset(void)
@@ -84,8 +157,22 @@ void AllReset(void)
 
     ClearGraphicRam();
 
+    // Copy interrupt handler code from ROM to IWRAM (matches IDA SetIntrFunc at 0x8000258)
+    SetIntrFunc();
+
+    // Set default (empty) VBlank handler before screens take over (matches IDA fnc at 0x800102c)
+    SetVblkFunc(DefaultVblkFunc);
+
+    // Boot-time save initialization (matches IDA AllReset order)
+    GroundSave_INIT_Read();
+    GameReady_INIT_Read();
+
+    // Sound driver init (TODO: implement sound)
+    // m4aSoundInit();
+    // SoundMode_rev01(0x900000);
+
     REG_IME = 1;
-    REG_IE = INTR_FLAG_VBLANK | INTR_FLAG_GAMEPAK;
+    REG_IE = INTR_FLAG_VBLANK;
     REG_DISPSTAT = DISPSTAT_VBLANK_INTR;
     REG_WAITCNT = 0x45B4;
 
@@ -138,7 +225,7 @@ void AgbMain(void)
         {
         // ============================================================
         //  MS_TITLE (0): Title screen
-        //  Hold B+L (0x22), press A (0x01) → debug stage select (MS_TITLE2)
+        //  Hold B+L (0x22), press A (0x01) -> debug stage select (MS_TITLE2)
         // ============================================================
         case MS_TITLE:
             if ((usCont & 0x22) == 0x22 && (usTrg & 0x01) != 0)
@@ -152,19 +239,19 @@ void AgbMain(void)
             currentState = GameTitle();
             switch (currentState)
             {
-                case 1:  // TITLE_RESULT_START → File Select
+                case 1:  // TITLE_RESULT_START -> File Select
                     sMainSeq = MS_FILESELECT;
                     sGameSeq = 0;
                     break;
-                case 2:  // TITLE_RESULT_END → Select (skip ready, go to map)
+                case 2:  // TITLE_RESULT_END -> Select (skip ready, go to map)
                     sMainSeq = MS_SELECT;
                     sGameSeq = 5;
                     break;
-                case 3:  // TITLE_RESULT_ESCAPE → Credits
+                case 3:  // TITLE_RESULT_ESCAPE -> Credits
                     sMainSeq = MS_CREDITS;
                     sGameSeq = 0;
                     break;
-                case 4:  // TITLE_RESULT_ENDING → Back to title
+                case 4:  // TITLE_RESULT_ENDING -> Back to title
                     sMainSeq = MS_TITLE;
                     sGameSeq = -1;
                     break;
@@ -180,11 +267,15 @@ void AgbMain(void)
 
         // ============================================================
         //  MS_SELECT (1) + MS_MAIN (2): Select screen / Main game
-        //  Falls through: Select → check if game should be entered
+        //  Original: MS_SELECT falls through to MS_MAIN only when GameSelect
+        //  returns non-zero (select is done). We check sMainSeq instead
+        //  (GameSelect sets sMainSeq=MS_MAIN internally when done).
         // ============================================================
         case MS_SELECT:
             GameSelect();
-            // Fall through to MS_MAIN logic below
+            if (sMainSeq != MS_MAIN)
+                break;  // Still in select screen, skip MS_MAIN
+            // Fall through to MS_MAIN logic below only when select is done
 
         case MS_MAIN:
             if (!GameMain())
@@ -211,28 +302,28 @@ void AgbMain(void)
                 {
                 case 0:
                 case 1:
-                    sGameSeq = 21;    // SEL_SEQ_DORA_INIT
+                    sGameSeq = 21;    // INIT_SELOUT (select-out transition)
                     break;
                 case 2:
-                    sGameSeq = 20;    // back to pose
+                    sGameSeq = 20;    // INIT_DORA_2 (back to door/posing)
                     break;
                 case 3:
                 case 4:
-                    sGameSeq = 14;    // SEL_SEQ_ROOM_INIT (save room)
+                    sGameSeq = 14;    // INIT_SMAP_5 (stage map after room)
                     break;
                 case 5:
                     if (!ucWorldNumBak)
-                        sGameSeq = 29;     // special end
+                        sGameSeq = 29;     // INIT_SELPOSE (special end)
                     else if (ucWorldNumBak == 5)
                     {
                         sMainSeq = MS_TITLE;
                         sGameSeq = -3;     // escape sequence
                     }
                     else
-                        sGameSeq = 25;     // boss door
+                        sGameSeq = 25;     // INIT_SELDEMO (boss door)
                     break;
                 case 6:
-                    sGameSeq = 38;    // mini game end
+                    sGameSeq = 38;    // INIT_MMAP_3 (mini game end)
                     break;
                 default:
                     break;
@@ -241,7 +332,7 @@ void AgbMain(void)
             break;
 
         // ============================================================
-        //  MS_RESET (3): Soft reset — wait for keys released
+        //  MS_RESET (3): Soft reset -- wait for keys released
         // ============================================================
         case MS_RESET:
             KeyReset();
@@ -282,7 +373,7 @@ void AgbMain(void)
         //  MS_SAVEINTERRUPT (5): Interrupted save write
         // ============================================================
         case MS_SAVEINTERRUPT:
-            // GameWriteTyudan();  // TODO: implement save interrupt handler
+            // GameWriteInterrupted();  // TODO: implement save interrupt handler
             sMainSeq = MS_PAUSE;
             break;
 
@@ -329,7 +420,7 @@ void AgbMain(void)
 
         // ============================================================
         //  MS_FILESELECT (9): File Select / Ready screen
-        //  Hold B+L, press A → debug stage select
+        //  Hold B+L, press A -> debug stage select
         // ============================================================
         case MS_FILESELECT:
             if ((usCont & 0x22) == 0x22 && (usTrg & 0x01) != 0)
@@ -354,13 +445,13 @@ void AgbMain(void)
                             if (ucSaveFlg)
                             {
                                 if (ucStageNum == 6)
-                                    sGameSeq = 0;
+                                    sGameSeq = 0;       // INIT_DMAP_1: on world map, go to DMAP
                                 else
-                                    sGameSeq = 38;  // boss door
+                                    sGameSeq = 38;      // INIT_MMAP_3: in a stage, go to mini map
                             }
                             else
                             {
-                                sGameSeq = -2;
+                                sGameSeq = -2;          // TITLE_ENTRY_PYRAMID: new game -> pyramid intro
                                 sMainSeq = MS_TITLE;
                             }
                         }
@@ -430,7 +521,10 @@ void AgbMain(void)
                 break;
             default:
                 sMainSeq = MS_TITLE;
-                sGameSeq = 0;
+                if (cNextFlg == 5)
+                    sGameSeq = -4;
+                else
+                    usBgEvy = 0;
                 break;
             }
             cNextFlg = 0;
@@ -460,9 +554,10 @@ void AgbMain(void)
         } while ((usIntrCheck & 1) == 0);
     }
 
-    // Cleanup after main loop exit (full reset)
-    // SoundVSyncOff_rev01();
-    // if (ucAllReset == 2) Save_RamAllReset();
+    // Cleanup after main loop exit (full reset, matches IDA AgbMain epilogue)
+    // SoundVSyncOff_rev01();  // TODO: implement sound
+    if (ucAllReset == 2)
+        CartridgeSram_AllClear();
 }
 
 // ---- Interrupt Handlers ----

@@ -1,4 +1,4 @@
-// Scene 2: Swamp — car driving through swamp at dusk
+// Scene 2: Swamp -- car driving through swamp at dusk
 //
 // After the waterfall scene (scene1), the title sequence shows Wario's
 // car driving through a swampy area at dusk. This scene uses three BG
@@ -6,13 +6,13 @@
 //
 // BG layers:
 //   BG0: Car upper body + door       (512x256, screenbase 16, priority 0)
-//        — Car roof, windows, door frame. Door pattern cycles through
+//        -- Car roof, windows, door frame. Door pattern cycles through
 //          4 frames to simulate swinging on bumpy terrain.
 //   BG1: Car lower body + ground     (512x256, screenbase 18, priority 0)
-//        — Ground strips, tires, car chassis. Front and rear tires
+//        -- Ground strips, tires, car chassis. Front and rear tires
 //          animate through 4 frames for rotation effect.
 //   BG2: Shutter/grate overlay       (256x256, screenbase 20, priority 0)
-//        — Vertical bars/grille that scroll upward creating a "film reel"
+//        -- Vertical bars/grille that scroll upward creating a "film reel"
 //          transition effect between title segments.
 //
 // Animation details:
@@ -53,10 +53,10 @@ extern s16 bg_scroll_x;
 #define BG1_TOP 0x9000
 #define BG2_TOP 0xA000
 
-// Tire positions within BG1 screenblock (row offsets)
+// Tire positions within BG1 screenblock (row offsets, matching IDA)
 // BG1 is 32 tiles wide. Front tire at row ~13, rear tire at row ~8
-#define FRONT_TIRE_TOP 423    // tile offset: row 13 * 32 + 7 = 423
-#define REAR_TIRE_TOP  272    // tile offset: row 8 * 32 + 16 = 272
+#define FRONT_TIRE_TOP 422    // tile offset: 0x600934E - 0x6009000 = 0x34E bytes = 422 tiles
+#define REAR_TIRE_TOP  272    // tile offset: 0x6009220 - 0x6009000 = 0x220 bytes = 272 tiles
 
 // ---- Scene2_SetPattern ----
 // Updates the door (BG0), ground (BG1), tires (BG1), and ground fill row
@@ -71,15 +71,15 @@ static void Scene2_SetPattern(int frame)
     // to create a scrolling ground texture effect
     static const u16 ground_tile[4] = { 0x2109, 0x20C7, 0x20DE, 0x20F2 };
 
-    // === Door → BG0 (screenbase 16) ===
+    // === Door -> BG0 (screenbase 16) ===
     // Replace the door area of the car upper body with the current frame
     UnPackScreen((const u16 *)scene2_door[f], (vu16 *)((u8 *)BG_VRAM + BG0_TOP));
 
-    // === Front tire → BG1 (row offset 423, 2 tiles wide × 4 rows) ===
+    // === Front tire -> BG1 (row offset 423, 2 tiles wide x 4 rows) ===
     // Copy the 2x4 front tire pattern directly to the BG1 screenblock
     {
         int r, c;
-        u16 *dst = (vu16 *)((u8 *)BG_VRAM + BG1_TOP) + FRONT_TIRE_TOP;
+        vu16 *dst = (vu16 *)((u8 *)BG_VRAM + BG1_TOP) + FRONT_TIRE_TOP;
         const u16 *src = scene2_frontTire[f];
         for (r = 0; r < 4; r++)
         {
@@ -89,10 +89,10 @@ static void Scene2_SetPattern(int frame)
         }
     }
 
-    // === Rear tire → BG1 (row offset 272, 4 tiles wide × 9 rows) ===
+    // === Rear tire -> BG1 (row offset 272, 4 tiles wide x 9 rows) ===
     {
         int r, c;
-        u16 *dst = (vu16 *)((u8 *)BG_VRAM + BG1_TOP) + REAR_TIRE_TOP;
+        vu16 *dst = (vu16 *)((u8 *)BG_VRAM + BG1_TOP) + REAR_TIRE_TOP;
         const u16 *src = scene2_rearTire[f];
         for (r = 0; r < 9; r++)
         {
@@ -102,17 +102,16 @@ static void Scene2_SetPattern(int frame)
         }
     }
 
-    // === Ground → BG1 (screenbase 18) ===
+    // === Ground -> BG1 (screenbase 18) ===
     UnPackScreen((const u16 *)scene2_ground[f], (vu16 *)((u8 *)BG_VRAM + BG1_TOP));
 
-    // === Ground fill row (right edge of BG1, 512x256 mode) ===
-    // When using 512x256 BG mode, the screen uses TWO consecutive
-    // screenbases (18 and 19 = 0x9000 and 0x9800). The right half
-    // (0x9800) needs ground fill on the rightmost 24 tiles to prevent
-    // gaps when the car scrolls.
+    // === Ground fill row (matching IDA: fill 24 tiles backward from offset 0x93FE) ===
+    // Fills 24 tiles at BG1 offset 488-511 (0x1E8-0x1FF tiles from BG1_TOP)
+    // with the ground tile for the current frame. This covers the right edge
+    // of the left 512x256 half where the car shadow rows end.
     data = ground_tile[f];
     {
-        u16 *w = (u16 *)((u8 *)BG_VRAM + BG1_TOP + 0x800) + 575;
+        vu16 *w = (vu16 *)((u8 *)BG_VRAM + BG1_TOP) + 511;
         for (j = 0; j < 24; j++)
             *w-- = data;
     }
@@ -120,7 +119,7 @@ static void Scene2_SetPattern(int frame)
 
 void Scene2_Init(void)
 {
-    // ---- Load BG palette (48 entries = 3 rows × 16) ----
+    // ---- Load BG palette (48 entries = 3 rows x 16) ----
     // Row 0: car body colors (muted dark tones for swamp scene)
     // Row 1: ground/road colors
     // Row 2: sky/background colors
@@ -137,11 +136,11 @@ void Scene2_Init(void)
     }
 
     // ---- Clear BG0-BG3 screenbases with blank tile 0x3FF ----
-    // 512x256 modes use 2 screenbases each (0x800 bytes × 2)
+    // 512x256 modes use 2 screenbases each (0x800 bytes x 2)
     // BG0: screenbases 16+17 (0x8000+0x8800)
     // BG1: screenbases 18+19 (0x9000+0x9800)
     // BG2: screenbase 20 (0xA000)
-    // Clear 4 screenbases × 0x800 = 0x2000 bytes total
+    // Clear 4 screenbases x 0x800 = 0x2000 bytes total
     {
         volatile u32 v = 0x03FF03FF;
         REG_DMA3SAD = (u32)&v;
@@ -150,15 +149,15 @@ void Scene2_Init(void)
     }
 
     // ---- UnPack car body tilemaps ----
-    // Car upper → BG0 left half (screenbase 16 = 0x8000)
+    // Car upper -> BG0 left half (screenbase 16 = 0x8000)
     UnPackScreen((const u16 *)scene2_carU, (vu16 *)((u8 *)BG_VRAM + BG0_TOP));
-    // Car lower → BG1 left half (screenbase 18 = 0x9000)
+    // Car lower -> BG1 left half (screenbase 18 = 0x9000)
     UnPackScreen((const u16 *)scene2_carL, (vu16 *)((u8 *)BG_VRAM + BG1_TOP));
 
     // ---- Fill ground bottom rows with blank tile 0x15 ----
     // Both halves of BG1 (512x256 mode uses screenbases 18+19).
     // Tile offset 544 = row 17 (544 / 32 = 17 rows down).
-    // 96 tiles = 3 rows × 32 tiles per row.
+    // 96 tiles = 3 rows x 32 tiles per row.
     {
         volatile u32 t15 = 0x00150015;
         // Left half fill
@@ -175,7 +174,7 @@ void Scene2_Init(void)
     Scene2_SetPattern(0);
 
     // ---- Clear BG2 shutter area ----
-    // Top section: 32×17 tiles with blank tile 0x15
+    // Top section: 32x17 tiles with blank tile 0x15
     {
         volatile u32 t15 = 0x00150015;
         REG_DMA3SAD = (u32)&t15;
@@ -207,7 +206,7 @@ void Scene2_Init(void)
     REG_BG0HOFS = bg_scroll_x;
     REG_BG1HOFS = bg_scroll_x;
 
-    // Display off at init — enabled in Exec case 0
+    // Display off at init -- enabled in Exec case 0
     REG_DISPCNT = DISPCNT_MODE_0;
 }
 
@@ -269,9 +268,9 @@ void Scene2_Exec(int time)
 
         // === Door, ground, and tire pattern changes ===
         // The car has 4 animation frames cycled at specific times:
-        //   Frame 0 → 1 at t=32 (first tire rotation, ~0.5 sec)
-        //   Frame 1 → 2 at t=64 (second rotation)
-        //   Frame 2 → 3 at t=146 (third rotation, longer gap for impact effect)
+        //   Frame 0 -> 1 at t=32 (first tire rotation, ~0.5 sec)
+        //   Frame 1 -> 2 at t=64 (second rotation)
+        //   Frame 2 -> 3 at t=146 (third rotation, longer gap for impact effect)
         if (uLocalTime == 32)
             Scene2_SetPattern(1);
         else if (uLocalTime == 64)
@@ -296,7 +295,7 @@ void Scene2_Exec(int time)
         // === Car body horizontal deceleration ===
         // The car continues drifting right from -24 toward its target at +16.
         // Speed decreases in stages for a smooth stop:
-        //   >-8: move every 8th frame (slowest — approaching final position)
+        //   >-8: move every 8th frame (slowest -- approaching final position)
         //   >-4: move every 16th frame
         //   else: move every 32nd frame
         // Final target: bg_scroll_x reaches 16 (car centered with slight offset)
@@ -318,8 +317,8 @@ void Scene2_Exec(int time)
 
         // === BG0 vertical wobble (bumpy road effect) ===
         // Two wobble tables for different intensities:
-        //   Before t=64:  softer wobble (values 0,2,4,2) — smoother road
-        //   After t=146: harder wobble (values 0,3,6,3) — rougher terrain
+        //   Before t=64:  softer wobble (values 0,2,4,2) -- smoother road
+        //   After t=146: harder wobble (values 0,3,6,3) -- rougher terrain
         //   Between 64-146: medium wobble (values 0,2,4,2)
         {
             static const u8 wobble_hard[] = { 0, 3, 6, 3 };

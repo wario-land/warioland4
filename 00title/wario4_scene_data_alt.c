@@ -1,4 +1,4 @@
-// Wario4 Title Scene — Alternate data version
+// Wario4 Title Scene -- Alternate data version
 // Alternative BG tilemaps and logos
 #include "../gba/gba.h"
 #include "title_config.h"

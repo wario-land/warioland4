@@ -26,7 +26,7 @@ int scene3_Anime0(int time, const u16 **pattern)
 }
 
 // ====================================================================
-//  Scene 4: Highway — Cat, car, paper plane
+//  Scene 4: Highway -- Cat, car, paper plane
 // ====================================================================
 extern const u16 scene4_000[], scene4_001[], scene4_002[], scene4_003[];
 extern const u16 scene4_004[], scene4_005[], scene4_006[], scene4_007[];
@@ -116,7 +116,7 @@ int scene4_Anime6(int time, const u16 **pattern)
     return (t == 89);
 }
 
-// Anime7: Cat flying up with paper — rapid wing flapping (63 frames)
+// Anime7: Cat flying up with paper -- rapid wing flapping (63 frames)
 int scene4_Anime7(int time, const u16 **pattern)
 {
     int t = time % 63;
@@ -253,6 +253,9 @@ extern const u16 scene7_cat_000[], scene7_cat_001[], scene7_cat_002[];
 extern const u16 scene7_cat_003[], scene7_cat_004[], scene7_cat_005[];
 extern const u16 scene7_cat_006[], scene7_cat_007[], scene7_cat_008[];
 extern const u16 scene7_cat_009[], scene7_cat_00A[], scene7_cat_00B[];
+extern const u16 scene7_cat_00C[], scene7_cat_00D[], scene7_cat_00E[], scene7_cat_00F[];
+extern const u16 scene7_cat_010[], scene7_cat_011[], scene7_cat_012[];
+extern const u16 scene7_cat_013[], scene7_cat_014[];
 extern const u16 scene7_smoke_054[], scene7_smoke_055[];
 extern const u16 scene7_smoke_056[], scene7_smoke_057[];
 
@@ -280,16 +283,29 @@ int scene7_cat_Anime0(int time, const u16 **pattern)
     return (t == 328);
 }
 
+// Cat running animation (24-frame cycle, 4 patterns)
+// IDA scene7_cat_Anime1 at 0x800c700
 int scene7_cat_Anime1(int time, const u16 **pattern)
 {
-    *pattern = scene7_cat_000;
-    return (time % 40 == 39);
+    int t = time % 24;
+    if (t <= 5)        *pattern = scene7_cat_00C;
+    else if (t <= 11)  *pattern = scene7_cat_00D;
+    else if (t <= 17)  *pattern = scene7_cat_00E;
+    else               *pattern = scene7_cat_00F;
+    return (t == 23);
 }
 
+// Cat emerging from darkness (74-frame cycle, 5 patterns)
+// IDA scene7_cat_Anime2 at 0x800c748
 int scene7_cat_Anime2(int time, const u16 **pattern)
 {
-    *pattern = scene7_cat_002;
-    return (time % 20 == 19);
+    int t = time % 74;
+    if (t <= 49)       *pattern = scene7_cat_010;
+    else if (t <= 55)  *pattern = scene7_cat_011;
+    else if (t <= 61)  *pattern = scene7_cat_012;
+    else if (t <= 67)  *pattern = scene7_cat_013;
+    else               *pattern = scene7_cat_014;
+    return (t == 73);
 }
 
 int scene7_smoke_Anime22(int time, const u16 **pattern)
@@ -426,4 +442,34 @@ void scene5_Anime16(const u16 **pattern)
 void scene5_Tire(const u16 **pattern)
 {
     *pattern = scene5_01C;
+}
+
+// ====================================================================
+//  Wario4 scene: Rock/smoke particles behind car (Rock1-4)
+// ====================================================================
+// Each Rock function sets a static OBJ pattern for a smoke/rock
+// particle that appears behind the car during the night scene.
+extern const u16 scene5_00E[];
+extern const u16 scene5_00F[];
+extern const u16 scene5_010[];
+extern const u16 scene5_011[];
+
+void scene5_Rock1(const u16 **pattern)
+{
+    *pattern = scene5_00E;
+}
+
+void scene5_Rock2(const u16 **pattern)
+{
+    *pattern = scene5_00F;
+}
+
+void scene5_Rock3(const u16 **pattern)
+{
+    *pattern = scene5_010;
+}
+
+void scene5_Rock4(const u16 **pattern)
+{
+    *pattern = scene5_011;
 }

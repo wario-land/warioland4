@@ -6,6 +6,7 @@
 
 #define IWRAM_DATA __attribute__((section("iwram_data")))
 #define EWRAM_DATA __attribute__((section("ewram_data")))
+#define SAVE_DATA  __attribute__((section(".save_data")))
 #define COMMON_DATA __attribute__((section("common_data")))
 #define UNUSED __attribute__((unused))
 

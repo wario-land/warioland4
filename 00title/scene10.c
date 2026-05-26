@@ -1,10 +1,10 @@
-// Scene 10: Pyramid collapse — Wario and cat escape the crumbling pyramid
+// Scene 10: Pyramid collapse -- Wario and cat escape the crumbling pyramid
 //
 // BG layers:
-//   BG0: 256x256 16-color — jungle background (scene10_jungle)
-//   BG1: 256x256 16-color — mid pyramid (pyramid_bg2, reused)
-//   BG2: 256x256 16-color — far pyramid (pyramid_bg3, reused)
-//   BG3: 256x256 16-color — texture overlay (scene10_texture)
+//   BG0: 256x256 16-color -- jungle background (scene10_jungle)
+//   BG1: 256x256 16-color -- mid pyramid (pyramid_bg2, reused)
+//   BG2: 256x256 16-color -- far pyramid (pyramid_bg3, reused)
+//   BG3: 256x256 16-color -- texture overlay (scene10_texture)
 //
 // OBJ: Cat+Wario, treasure, smoke, sparkle, princess sequence
 //
@@ -18,6 +18,7 @@
 #include "title.h"
 
 // ---- External data ----
+extern const u16 scene10_bg_Palette[];     // 96 entries (192 bytes)
 extern const u16 scene10_obj_Palette[256];
 extern const u8  scene10_obj_Char[];
 extern const u8  scene10_jungle_Char[];
@@ -46,6 +47,11 @@ extern u32 uObjSize;
 
 void Scene10_Init(void)
 {
+    // DMA BG palette (96 entries = 192 bytes, matches IDA 0x80000060)
+    REG_DMA3SAD = (u32)scene10_bg_Palette;
+    REG_DMA3DAD = (u32)BG_PLTT;
+    REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (96*2 >> 2);
+
     // DMA OBJ palette (256 entries = 512 bytes)
     REG_DMA3SAD = (u32)scene10_obj_Palette;
     REG_DMA3DAD = (u32)OBJ_PLTT;
@@ -61,12 +67,13 @@ void Scene10_Init(void)
     // scene10_obj_Char -> OBJ VRAM
     LZ77UnCompVram((const u32 *)scene10_obj_Char, (void *)OBJ_VRAM0);
 
-    // Clear tile 0x3FF (blank white tile)
+    // Fill screenbases 16-19 with blank tile 0x3FF (8192 bytes = 4 screenblocks)
+    // Matches IDA at 0x8008b1a: 0x3FF03FF -> 0x6008000, control 0x85000800
     {
-        volatile u32 z = 0;
-        REG_DMA3SAD = (u32)&z;
-        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x7FE0);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (32 >> 2);
+        volatile u32 p = 0x03FF03FF;
+        REG_DMA3SAD = (u32)&p;
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x2000 >> 2);
     }
 
     // ---- UnPackScreen tilemaps ----
@@ -198,10 +205,9 @@ void Scene10_Exec(int time)
     }
 
     // ---- OBJ rendering ----
-    // Wario OBJ (always visible)
+    // Wario OBJ (always visible, multi-part via Wario_Move)
     {
-        static const u16 wario_run[] = { 1, 0x4080, 0x8088, 0x0200 };
-        dst = SetObj(wario_run, dst, 120, ob_pos_y);
+        dst = Wario_Move(120, ob_pos_y, 0, 0, 0);
     }
 
     // Cat OBJ (visible during animation)

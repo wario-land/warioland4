@@ -1,31 +1,27 @@
 // Select screen: world map, level select, mini map, room select
 //
 // GameSelect() is the main entry point called from main.c when sMainSeq == MS_SELECT.
-// It dispatches between sub-modes based on sGameSeq:
+// It uses a jump-table dispatch on sGameSeq (matching IDA GameSelect at 0x807c1dc).
 //
-//   SEL_SEQ_DMAP: World map — Wario walks on a scrolling map between worlds.
-//     The player navigates with D-pad. Press A to enter a world's mini map.
+// The state machine values are defined in select.h and match the original game exactly.
+// Each screen follows the pattern: INIT_* -> FIN_* (fade-in) -> MAIN (loop) -> FOUT_* (fade-out)
 //
-//   SEL_SEQ_MMAP: Mini map — Stage select within a world (6 normal stages
-//     + 1 bonus stage + boss door). Left/right moves between stages.
-//     Press A to select a stage and transition to posing/kime.
-//
-//   SEL_SEQ_DORA: Door/CD — Transition animation showing Wario entering a door
-//     or a CD spinning. Plays when entering/leaving a stage.
-//
-//   SEL_SEQ_KIME: Posing — Wario poses with stage name and effects (flowers,
-//     sparkles, smoke). Shows before entering the actual game stage.
-//
-//   SEL_SEQ_ROOM: Room — Save room screen with photo, level info, save options.
+// Multiple INIT variants exist for different entry contexts:
+//   _1 = first time / from title
+//   _2 = returning from sub-screen
+//   _3 = from ready/file-select (pyramid intro complete, new game)
+//   _4 = from demo completion
+//   _5 = after special event (tutorial/boss clear)
 //
 // Navigation flow:
-//   Title → Ready → Dmap (world map) → Mmap (mini map) → Kime (posing)
-//     → Game (stage)
-//   After stage complete → Room (save) → Dmap (world map)
+//   Title -> Ready -> Title Pyramid Intro -> DMAP (world map) -> MMAP (mini map)
+//     -> KIME (posing) -> Game (stage)
+//   After stage complete -> Room (save) -> DMAP (world map)
 
 #include "select.h"
 #include "../gba/gba.h"
 #include "../gameutils.h"
+#include "../save/save.h"
 
 // ---- Select IWRAM variables ----
 IWRAM_DATA u8   ucSelectVector;
@@ -61,28 +57,52 @@ IWRAM_DATA u8   ucSelectFootstepCount;
 IWRAM_DATA u8   ucSelectJewelFlag;
 
 // ---- VBlank handler for select screen ----
-// DMA-copies OamBuf to hardware OAM, updates BG scroll registers.
-// Called every VBlank while in any select sub-mode.
+// Matches IDA SelectVblkIntr01 at 0x807cd5c.
+// ALWAYS DMA-copies OamBuf to hardware OAM (unconditional, all 128 OBJs).
+// Then dispatches to sub-handlers based on sGameSeq.
 static void SelectVblankHandler(void)
 {
-    // OAM DMA: copy OamBuf to hardware OAM if objects were rendered
-    if (ucCntObj)
-    {
-        REG_DMA3SAD = (u32)OamBuf;
-        REG_DMA3DAD = (u32)OAM;
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (128 * 8 >> 2);
-        ucCntObj = 0;
-    }
+    // OAM DMA: always copy all 128 OBJs from OamBuf to OAM
+    // IDA: MEMORY[0x40000DC] = 0x84000100 (256 words = 128 OBJs)
+    REG_DMA3SAD = (u32)OamBuf;
+    REG_DMA3DAD = (u32)OAM;
+    REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (128 * 8 >> 2);
 
-    // BG scroll register update (used by DMAP sub-mode for parallax)
-    REG_BG0HOFS = usBg0Hofs;
-    REG_BG0VOFS = usBg0Vofs;
-    REG_BG1HOFS = usBg1Hofs;
-    REG_BG1VOFS = usBg1Vofs;
-    REG_BG2HOFS = usBg2Hofs;
-    REG_BG2VOFS = usBg2Vofs;
-    REG_BG3HOFS = usBg3Hofs;
-    REG_BG3VOFS = usBg3Vofs;
+    // Dispatch to sub-handler based on sGameSeq
+    switch (sGameSeq)
+    {
+    case INIT_DMAP_1: case FIN_DMAP: case DMAP: case FOUT_DMAP:
+    case INIT_DMAP_2: case INIT_DMAP_3: case INIT_DMAP_4: case INIT_DMAP_5:
+        // DMAP: BG scroll + window update (matching IDA SelectDmapVblk)
+        REG_BG0VOFS = (sDmapBgPosY >> 4);
+        REG_BG0HOFS = 0;
+        REG_BG1VOFS = (sDmapBgPosY >> 4);
+        REG_BG1HOFS = 0;
+        REG_BG2VOFS = (sDmapBgPosY >> 4);
+        REG_BG2HOFS = 0;
+        REG_BG3VOFS = 0;
+        REG_BG3HOFS = 0;
+        REG_WIN0H = WIN_RANGE(sDmapWindowLeftX, sDmapWindowRightX);
+        REG_WIN0V = WIN_RANGE(0, 160);
+        break;
+
+    case INIT_MMAP_1: case FIN_MMAP: case MMAP: case FOUT_MMAP:
+    case INIT_MMAP_2: case INIT_MMAP_3: case INIT_MMAP_4: case MMAP_WAIT:
+        // MMAP: BG scroll update
+        REG_BG0HOFS = usBg0Hofs; REG_BG0VOFS = usBg0Vofs;
+        REG_BG1HOFS = usBg1Hofs; REG_BG1VOFS = usBg1Vofs;
+        REG_BG2HOFS = usBg2Hofs; REG_BG2VOFS = usBg2Vofs;
+        REG_BG3HOFS = usBg3Hofs; REG_BG3VOFS = usBg3Vofs;
+        break;
+
+    default:
+        // Other states: generic scroll update + blend
+        REG_BG0HOFS = usBg0Hofs; REG_BG0VOFS = usBg0Vofs;
+        REG_BG1HOFS = usBg1Hofs; REG_BG1VOFS = usBg1Vofs;
+        REG_BG2HOFS = usBg2Hofs; REG_BG2VOFS = usBg2Vofs;
+        REG_BG3HOFS = usBg3Hofs; REG_BG3VOFS = usBg3Vofs;
+        break;
+    }
 
     // Alpha blend register update (used by fade transitions)
     REG_BLDALPHA = (usBgEvb << 8) | usBgEva;
@@ -96,176 +116,339 @@ static void SelectVblkSet(void)
 
 // ---- Main Select Dispatcher ----
 //
-// On first entry from ready screen (sGameSeq == 5), we set up VBlank
-// and jump to the world map (DMAP) init.
+// Matches IDA GameSelect at 0x807c1dc.
+// On first call each frame: sets VBlank handler, resets OBJ count,
+// then dispatches via switch on sGameSeq.
 //
-// After initialization, the sub-mode functions advance sGameSeq themselves.
+// Each sub-mode advances sGameSeq as it transitions through states.
 //
 void GameSelect(void)
 {
-    // First entry from ready: set up VBlank and jump to world map init
-    if (sGameSeq == 5)
-    {
-        SelectVblkSet();
-        ucCntObj = 0;
-        sGameSeq = SEL_SEQ_DMAP_INIT;
-        ucSelectVector = 0;
-    }
+    SelectVblkSet();
 
     switch (sGameSeq)
     {
     // ================================================================
-    //  World Map (DMAP)
+    //  DMAP: World Map (dungeon map)
     // ================================================================
-    case SEL_SEQ_DMAP_INIT:
+    case INIT_DMAP_1:   // 0: First entry from title/intro
         SelectDmapInit();
-        sGameSeq = SEL_SEQ_DMAP_MAIN;
+        sGameSeq = FIN_DMAP;
         break;
 
-    case SEL_SEQ_DMAP_MAIN:
-        // GameSelectDmap returns 1 when transitioning to next mode
+    case FIN_DMAP:      // 1: Fade-in to world map
+        if (SelectFadeIn(4))
+            sGameSeq = DMAP;
+        SelectDmapOamCreate();  // Render OBJs during fade-in too
+        ucCntObj = 1;
+        break;
+
+    case DMAP:          // 2: Main world map loop
         if (GameSelectDmap())
-            sGameSeq = SEL_SEQ_DMAP_EXIT;
-        // Render OBJs for this frame (will be DMA'd to OAM at next VBlank)
+            sGameSeq = FOUT_DMAP;
         SelectDmapOamCreate();
         ucCntObj = 1;
         break;
 
-    case SEL_SEQ_DMAP_EXIT:
-        sGameSeq = SEL_SEQ_MMAP_INIT;
+    case FOUT_DMAP:     // 3: Fade-out from world map
+        if (SelectFadeOut(4))
+            sGameSeq = INIT_MMAP_1;
+        SelectDmapOamCreate();
+        ucCntObj = 1;
+        break;
+
+    case INIT_DMAP_2:   // 4: Entry from MMAP returning to DMAP
+        SelectDmapInit();
+        // Restore previous world position
+        sGameSeq = FIN_DMAP;
+        break;
+
+    case INIT_DMAP_3:   // 5: Entry from file select (pyramid intro done)
+        // Start demo: Wario slides into tutorial world
+        SelectDmapInit3();
+        break;
+
+    case INIT_DMAP_4:   // 6: Entry for start demo (opening cutscene)
+        SelectDmapInit4();
+        break;
+
+    case INIT_DMAP_5:   // 7: Entry for tutorial/boss clear demo
+        SelectDmapInit5();
         break;
 
     // ================================================================
-    //  Mini Map / Stage Select (MMAP)
+    //  SMAP: Stage Map (world overview)
+    //  Basic stub: fade-in, wait, fade-out, transition to MMAP.
+    //  Full SMAP screen with stage paths will be implemented later.
     // ================================================================
-    case SEL_SEQ_MMAP_INIT:
-        SelectMmapInit();
-        sGameSeq = SEL_SEQ_MMAP_MAIN;
+    case FIN_SMAP:      // 8: Fade-in
+        if (SelectFadeIn(4))
+            sGameSeq = SMAP;
         break;
 
-    case SEL_SEQ_MMAP_MAIN:
-        // GameSelectMmap handles stage selection and navigation
-        // Returns non-zero when transitioning
-        if (GameSelectMmap())
+    case SMAP:          // 9: Main -- brief wait then transition out
+        if (SelectFadeWait(30))
+            sGameSeq = FOUT_SMAP;
+        break;
+
+    case FOUT_SMAP:     // 10: Fade-out to MMAP
+        if (SelectFadeOut(4))
+            sGameSeq = INIT_MMAP_1;  // Go to mini map for stage selection
+        break;
+
+    case INIT_SMAP_2:   // 11: Re-entry variant -- init then fade in
+    case INIT_SMAP_3:   // 12: From file select
+    case INIT_SMAP_4:   // 13: Demo entry
+    case INIT_SMAP_5:   // 14: After stage clear / from SROOM
+        sGameSeq = FIN_SMAP;
+        break;
+
+    // ================================================================
+    //  DORA: Door/CD Transition Animation
+    //  Basic stub: fade-in, wait, fade-out, then go to gameplay.
+    //  Full door animation with CD will be implemented later.
+    // ================================================================
+    case INIT_DORA:     // 15: Init door animation
+        sGameSeq = FIN_DORA;
+        break;
+
+    case FIN_DORA:      // 16: Fade-in door
+        if (SelectFadeIn(4))
+            sGameSeq = DORA;
+        break;
+
+    case DORA:          // 17: Main door -- wait then fade out
+        if (SelectFadeWait(30))
+            sGameSeq = FOUT_DORA;
+        break;
+
+    case SCORE_TALLY:        // 18: Score tally -- skip for now
+        sGameSeq = FOUT_DORA;
+        break;
+
+    case FOUT_DORA:     // 19: Fade-out -- start gameplay
+        if (SelectFadeOut(4))
         {
-            // Transition to posing (KIME) or back to DMAP handled inside
+            sMainSeq = MS_MAIN;
+            sGameSeq = 0;
         }
+        break;
+
+    case INIT_DORA_2:   // 20: Door variant from stage end type 2
+        sGameSeq = FIN_DORA;
+        break;
+
+    // ================================================================
+    //  SELOUT: Select-Out Transition
+    //  Basic stub: fade-in, wait, fade-out to DMAP.
+    // ================================================================
+    case INIT_SELOUT:   // 21
+        sGameSeq = FIN_SELOUT;
+        break;
+
+    case FIN_SELOUT:    // 22: Fade-in
+        if (SelectFadeIn(4))
+            sGameSeq = SELOUT;
+        break;
+
+    case SELOUT:        // 23: Main -- brief display then out
+        if (SelectFadeWait(30))
+            sGameSeq = FOUT_SELOUT;
+        break;
+
+    case FOUT_SELOUT:   // 24: Fade-out to DMAP
+        if (SelectFadeOut(4))
+            sGameSeq = INIT_DMAP_1;
+        break;
+
+    // ================================================================
+    //  SELDEMO: Select Demo
+    //  Basic stub: fade-in, wait, fade-out to DMAP.
+    // ================================================================
+    case INIT_SELDEMO:  // 25
+        sGameSeq = FIN_SELDEMO;
+        break;
+
+    case FIN_SELDEMO:   // 26: Fade-in
+        if (SelectFadeIn(4))
+            sGameSeq = SELDEMO;
+        break;
+
+    case SELDEMO:       // 27: Main -- brief display then out
+        if (SelectFadeWait(30))
+            sGameSeq = FOUT_SELDEMO;
+        break;
+
+    case FOUT_SELDEMO:  // 28: Fade-out to DMAP
+        if (SelectFadeOut(4))
+            sGameSeq = INIT_DMAP_1;
+        break;
+
+    // ================================================================
+    //  SELPOSE: Character Posing (shows stage name before entering)
+    // ================================================================
+    case INIT_SELPOSE:  // 29: Init posing screen
+        // KIME init -- set up stage name display, Wario pose
+        sGameSeq = FIN_SELPOSE;
+        break;
+
+    case FIN_SELPOSE:   // 30: Fade-in posing
+        if (SelectFadeIn(4))
+            sGameSeq = SELPOSE;
+        break;
+
+    case SELPOSE:       // 31: Main posing loop -- wait for anim or button
+        // TODO: Full posing animation with stage name
+        // For now: auto-advance after short delay
+        if (SelectFadeWait(30))
+            sGameSeq = FOUT_SELPOSE;
+        break;
+
+    case FOUT_SELPOSE:  // 32: Fade-out posing
+        if (SelectFadeOut(4))
+        {
+            // Transition to main game
+            sMainSeq = MS_MAIN;
+            sGameSeq = 0;
+        }
+        break;
+
+    // ================================================================
+    //  MMAP: Mini Map (stage select within a world)
+    // ================================================================
+    case INIT_MMAP_1:   // 33: Init mini map (first entry from DMAP)
+        SelectMmapInit();
+        sGameSeq = FIN_MMAP;
+        break;
+
+    case FIN_MMAP:      // 34: Fade-in mini map
+        if (SelectFadeIn(4))
+            sGameSeq = MMAP;
+        break;
+
+    case MMAP:          // 35: Main mini map loop
+        GameSelectMmap();
         SelectMmapOamCreate();
         ucCntObj = 1;
         break;
 
-    case SEL_SEQ_MMAP_EXIT:
-        // Transition to posing (KIME) or game start
-        sGameSeq = SEL_SEQ_KIME_INIT;
+    case FOUT_MMAP:     // 36: Fade-out mini map
+        if (SelectFadeOut(4))
+            sGameSeq = INIT_DMAP_2;  // Back to DMAP
+        SelectMmapOamCreate();
+        ucCntObj = 1;
+        break;
+
+    case INIT_MMAP_2:   // 37: Mini map entry variant 2
+        SelectMmapInit();
+        sGameSeq = FIN_MMAP;
+        break;
+
+    case INIT_MMAP_3:   // 38: From file select (continue game, ucStageNum != 6)
+        SelectMmapInit();
+        sGameSeq = FIN_MMAP;
+        break;
+
+    case INIT_MMAP_4:   // 39: From mini game
+        SelectMmapInit();
+        sGameSeq = FIN_MMAP;
+        break;
+
+    case MMAP_WAIT:     // 40: Mini map wait state
+        if (SelectFadeWait(20))
+            sGameSeq = FOUT_MMAP;
+        SelectMmapOamCreate();
+        ucCntObj = 1;
         break;
 
     // ================================================================
-    //  Door/CD Animation (DORA)
+    //  BOSS_DOOR: Boss Door Screen
+    //  Basic stub: fade-in, wait, fade-out, start gameplay.
     // ================================================================
-    case SEL_SEQ_DORA_INIT:
-        // Transition animation init — simplified: skip to next state
-        sGameSeq = SEL_SEQ_DORA_MAIN;
+    case INIT_BOSS_DOOR:    // 41: Init boss door
+        sGameSeq = FIN_BOSS_DOOR;
         break;
 
-    case SEL_SEQ_DORA_MAIN:
-        // Door transition animation: simple fade/timer
+    case FIN_BOSS_DOOR:     // 42: Fade-in
+        if (SelectFadeIn(4))
+            sGameSeq = BOSS_DOOR;
+        break;
+
+    case BOSS_DOOR:         // 43: Main -- wait then fade out
         if (SelectFadeWait(30))
-            sGameSeq = SEL_SEQ_DORA_EXIT;
+            sGameSeq = FOUT_BOSS_DOOR;
         break;
 
-    case SEL_SEQ_DORA_EXIT:
-        sGameSeq = SEL_SEQ_KIME_INIT;
+    case FOUT_BOSS_DOOR:    // 44: Fade-out -- start gameplay
+        if (SelectFadeOut(4))
+        {
+            sMainSeq = MS_MAIN;
+            sGameSeq = 0;
+        }
         break;
 
-    // ================================================================
-    //  Character Posing (KIME)
-    // ================================================================
-    case SEL_SEQ_KIME_INIT:
-        // Posing screen init — simplified: skip directly to game start
-        // Full implementation would show Wario posing with stage name
-        sGameSeq = SEL_SEQ_KIME_MAIN;
-        break;
-
-    case SEL_SEQ_KIME_MAIN:
-        // Posing screen main — wait for animation or button
-        // Simplified: auto-advance after short delay
-        if (SelectFadeWait(20))
-            sGameSeq = SEL_SEQ_KIME_EXIT;
-        break;
-
-    case SEL_SEQ_KIME_EXIT:
-        // Transition to main game
-        sMainSeq = MS_MAIN;
-        sGameSeq = 0;
+    case INIT_BOSS_DOOR_2:  // 45: Boss door variant
+        sGameSeq = FIN_BOSS_DOOR;
         break;
 
     // ================================================================
-    //  Room / Save Screen (ROOM)
+    //  SROOM: Save Room (after stage complete)
+    //  Basic stub: init -> fade-in -> save -> fade-out -> back to world.
     // ================================================================
-    case SEL_SEQ_ROOM_INIT:
-        sGameSeq = SEL_SEQ_ROOM_MAIN;
+    case INIT_SROOM:    // 46: Init save room -- switch to game Save VBlank
+        sGameSeq = FIN_SROOM;
         break;
 
-    case SEL_SEQ_ROOM_MAIN:
-        // Room screen main — simplified: auto-advance back to DMAP
-        if (SelectFadeWait(10))
-            sGameSeq = SEL_SEQ_ROOM_EXIT;
+    case FIN_SROOM:     // 47: Fade-in -- show save prompt
+        if (SelectFadeIn(4))
+            sGameSeq = SROOM;
         break;
 
-    case SEL_SEQ_ROOM_EXIT:
-        // After room, return to world map
-        sGameSeq = SEL_SEQ_DMAP_INIT;
+    case SROOM:         // 48: Save and transition
+        // Write save data to cartridge SRAM
+        Save_WriteAuto(ucSaveNum);
+        ucSaveFlg = 1;  // Mark as saved
+        sGameSeq = FOUT_SROOM;
         break;
 
-    // ================================================================
-    //  Stage Exit (JUMP sub-mode)
-    // ================================================================
-    case SEL_SEQ_JUMP_INIT:
-        sGameSeq = SEL_SEQ_JUMP_MAIN;
-        break;
-
-    case SEL_SEQ_JUMP_MAIN:
-        if (SelectFadeWait(16))
-            sGameSeq = SEL_SEQ_JUMP_EXIT;
-        break;
-
-    case SEL_SEQ_JUMP_EXIT:
-        sGameSeq = SEL_SEQ_STAGE_EXIT;
-        break;
-
-    // ================================================================
-    //  Boss Door
-    // ================================================================
-    case SEL_SEQ_BOSS_DOOR_INIT:
-        sGameSeq = SEL_SEQ_BOSS_DOOR_MAIN;
-        break;
-
-    case SEL_SEQ_BOSS_DOOR_MAIN:
-        if (SelectFadeWait(20))
-            sGameSeq = SEL_SEQ_BOSS_DOOR_EXIT;
-        break;
-
-    case SEL_SEQ_BOSS_DOOR_EXIT:
-        sGameSeq = SEL_SEQ_STAGE_EXIT;
-        break;
-
-    // ================================================================
-    //  Exit to game or title
-    // ================================================================
-    case SEL_SEQ_STAGE_EXIT:
-        // Start the actual game stage
-        sMainSeq = MS_MAIN;
-        sGameSeq = 0;
-        break;
-
-    case SEL_SEQ_SELECT_EXIT:
-        sMainSeq = MS_TITLE;
-        sGameSeq = -1;
+    case FOUT_SROOM:    // 49: Fade-out -- back to stage map
+        if (SelectFadeOut(4))
+            sGameSeq = INIT_SMAP_5;  // Re-enter SMAP after save
         break;
 
     default:
+        // sGameSeq > 0x31 (49): invalid state, reset to DMAP
+        sGameSeq = INIT_DMAP_1;
         break;
     }
+}
+
+// ---- Fade helpers ----
+
+// Fade IN: decreases BLDY to 0 (dark -> visible)
+// Returns 1 when fully visible.
+int SelectFadeIn(int interval)
+{
+    if ((usFadeTimer & interval) == interval)
+    {
+        if (usBgEvy > 0)
+            usBgEvy--;
+        REG_BLDY = usBgEvy;
+    }
+    return (usBgEvy == 0);
+}
+
+// Fade OUT: increases BLDY to 16 (visible -> dark)
+// Returns 1 when fully dark.
+int SelectFadeOut(int interval)
+{
+    if ((usFadeTimer & interval) == interval)
+    {
+        if (usBgEvy < 16)
+            usBgEvy++;
+        REG_BLDY = usBgEvy;
+    }
+    return (usBgEvy == 16);
 }
 
 // ---- Helper functions ----

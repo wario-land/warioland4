@@ -1,4 +1,4 @@
-// Wario4 Title Scene — BG tilemaps and OBJ data
+// Wario4 Title Scene -- BG tilemaps and OBJ data
 #include "../gba/gba.h"
 
 // Night cityscape tilemap for BG0
@@ -504,7 +504,7 @@ const u16 wario4_logo[] = {
     0x0000,
 };
 
-// "WARIO GBA" logo tilemap — Japanese version
+// "WARIO GBA" logo tilemap -- Japanese version
 const u16 warioGBA_logo[] = {
     0x0185, 0x6200, 0x0549, 0x6206, 0x0877, 0x6210, 0x0C77, 0x6228,
     0x1077, 0x6240, 0x1477, 0x6258, 0x1898, 0x6270, 0x1C81, 0x6289,

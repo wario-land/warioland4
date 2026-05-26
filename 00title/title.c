@@ -157,8 +157,7 @@ static void ob_param_init(void)
 }
 
 // ---- VBlank wait ----
-// Polls VCOUNT to synchronize with display. Used when VBlank interrupt
-// handler has not been set up yet, or when a scene needs a manual sync.
+// Polls VCOUNT to synchronize with display.
 void V_Wait(void)
 {
     while (REG_VCOUNT >= 160);
@@ -344,29 +343,29 @@ void SetObjPABCD(int index, int angle, s16 scale_x, s16 scale_y)
 
 // ---- Ending type resolution ----
 // Determines which ending cinematic to play based on treasure count.
-// Counts collected jewel pieces (ucKakera1-12GetFlg) to determine
+// Counts collected jewel pieces (ucJewel1-12GetFlg) to determine
 // usEndingType and sTreasureScale.
-//   Type 0: 0-1 treasures  — worst ending
-//   Type 1: 2-5 treasures  — bad ending
-//   Type 2: 6-11 treasures — good ending
-//   Type 3: 12 treasures   — best ending (all collected)
+//   Type 0: 0-1 treasures  -- worst ending
+//   Type 1: 2-5 treasures  -- bad ending
+//   Type 2: 6-11 treasures -- good ending
+//   Type 3: 12 treasures   -- best ending (all collected)
 static void GetEndingType(void)
 {
     int count = 0;
 
     // Count collected jewel pieces from 12 stages
-    if (ucKakera1GetFlg)  count++;
-    if (ucKakera2GetFlg)  count++;
-    if (ucKakera3GetFlg)  count++;
-    if (ucKakera4GetFlg)  count++;
-    if (ucKakera5GetFlg)  count++;
-    if (ucKakera6GetFlg)  count++;
-    if (ucKakera7GetFlg)  count++;
-    if (ucKakera8GetFlg)  count++;
-    if (ucKakera9GetFlg)  count++;
-    if (ucKakera10GetFlg) count++;
-    if (ucKakera11GetFlg) count++;
-    if (ucKakera12GetFlg) count++;
+    if (ucJewel1GetFlg)  count++;
+    if (ucJewel2GetFlg)  count++;
+    if (ucJewel3GetFlg)  count++;
+    if (ucJewel4GetFlg)  count++;
+    if (ucJewel5GetFlg)  count++;
+    if (ucJewel6GetFlg)  count++;
+    if (ucJewel7GetFlg)  count++;
+    if (ucJewel8GetFlg)  count++;
+    if (ucJewel9GetFlg)  count++;
+    if (ucJewel10GetFlg) count++;
+    if (ucJewel11GetFlg) count++;
+    if (ucJewel12GetFlg) count++;
 
     usTreasureCount = count;
 
@@ -398,12 +397,16 @@ static void GetEndingType(void)
     }
 }
 
-// ---- Init screen ----
-// Clears palette, edge tiles, and all BG screens.
-// Clears palette, edge tiles, and all BG screenbases.
-static void Init(void)
+// Reset screen to blank state. Matches IDA Init at 0x8003d5c.
+// Clears full palette RAM (256 BG + 256 OBJ entries),
+// clears BG2 scroll registers, and turns display off.
+// Also cleans up VRAM at specific screenblock end addresses:
+//   - Fills 0x06007F80 with 0xFFFFFFFF (16 words)
+//   - Clears 0x06007FC0 (16 words)
+//   - Fills 0x06008000 with 0x03FF03FF (0x1000 words)
+void TitleInit(void)
 {
-    // Clear full palette RAM (256 entries * 2 bytes = 1024 bytes)
+    // Clear full palette RAM (1KB: 256 BG + 256 OBJ entries x 2 bytes)
     {
         volatile u32 z = 0;
         REG_DMA3SAD = (u32)&z;
@@ -411,34 +414,35 @@ static void Init(void)
         REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (PLTT_SIZE >> 2);
     }
 
-    // Fill edge tiles 1020-1021 with 0xFFFFFFFF (white)
+    // Fill 0x06007F80 with 0xFFFFFFFF (end-of-VRAM marker cleanup)
     {
         volatile u32 f = 0xFFFFFFFF;
         REG_DMA3SAD = (u32)&f;
-        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 1020 * 32);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (64 >> 2);
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x7F80);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (16);
     }
 
-    // Fill edge tiles 1022-1023 with zeros (black)
+    // Clear 0x06007FC0 (end-of-VRAM cleanup)
     {
         volatile u32 z = 0;
         REG_DMA3SAD = (u32)&z;
-        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 1022 * 32);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (64 >> 2);
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x7FC0);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (16);
     }
 
-    // Clear all 8 BG screenbases (16-23) with blank tile 0x3FF
-    // 0x800 bytes per screenblock * 8 = 0x4000 bytes total
+    // Fill 0x06008000 with repeating tile 0x03FF (screenblock fill pattern)
     {
-        volatile u32 v = 0x03FF03FF;
-        REG_DMA3SAD = (u32)&v;
-        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + BG0_TOP);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x4000 >> 2);
+        volatile u32 p = 0x03FF03FF;
+        REG_DMA3SAD = (u32)&p;
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x1000);
     }
 
-    REG_BLDCNT   = 0;
-    REG_BLDALPHA = 0;
-    REG_DISPCNT  = DISPCNT_MODE_0;
+    // Clear BG2 scroll/affine reference registers
+    REG_BG2HOFS = 0;
+    REG_BG2VOFS = 0;
+
+    REG_DISPCNT = DISPCNT_MODE_0;
 }
 
 static void Init_Exec(int time)
@@ -599,18 +603,31 @@ static void Nintendo_Exec(int time)
         break;
 
     case NIN_FADE_OUT:
+        // Fade to black: FadeInc increments uEVY from 0 to 16 every 4th frame.
+        // Original transitions after 51 frames (FadeInc return value not checked).
+        // We ensure both the minimum frame count AND the fade completion.
         FadeInc(3);
-        if (uLocalTime++ == 50)
+        if (++uLocalTime >= 51)
             sGameSeq++;
         break;
     }
 }
 
 // ---- Title VBlank handler ----
-// DMA-copies OAM buffer to hardware and writes affine params to BG2 registers
+// DMA-copies OAM buffer to hardware, writes affine params to BG2 registers,
+// and handles Wario OBJ tile upload during Scene7.
+// Matches IDA TitVblkIntr0 at 0x8003aec.
+
+// Forward declaration: Wario OBJ tile VBlank upload (defined below)
+static void Title_Wario_VblkSync(void);
+
+// ---- Title VBlank handler ----
+// DMA-copies OAM buffer to hardware, writes affine params to BG2 registers,
+// handles Wario OBJ tile upload during Scene7, and updates the sound driver.
+// Matches IDA TitVblkIntr0 at 0x8003aec.
 static void TitVblkIntr0(void)
 {
-    s16 *s;
+    // SoundVSync_rev01();  // TODO: sound
 
     // OAM DMA: copy OamBuf to hardware OAM
     if (uObjSize)
@@ -621,15 +638,44 @@ static void TitVblkIntr0(void)
     }
 
     // Write computed affine params to BG2 hardware registers
-    s = bg_pabcd_buf;
-    REG_BG2PA  = *s++;
-    REG_BG2PB  = *s++;
-    REG_BG2PC  = *s++;
-    REG_BG2PD  = *s++;
-    REG_BG2X_L = *s++;
-    REG_BG2X_H = *s++;
-    REG_BG2Y_L = *s++;
-    REG_BG2Y_H = *s;
+    REG_BG2PA  = bg_pabcd_buf[0];
+    REG_BG2PB  = bg_pabcd_buf[1];
+    REG_BG2PC  = bg_pabcd_buf[2];
+    REG_BG2PD  = bg_pabcd_buf[3];
+    REG_BG2X_L = bg_pabcd_buf[4];
+    REG_BG2X_H = bg_pabcd_buf[5];
+    REG_BG2Y_L = bg_pabcd_buf[6];
+    REG_BG2Y_H = bg_pabcd_buf[7];
+
+    // Scene7: upload Wario OBJ char data during VBlank.
+    // The Wario animation system sets usChrByte1/2 and pChrAddr1/2
+    // to request DMA upload of tile data to OBJ VRAM.
+    if (sGameSeq == 22)
+        Title_Wario_VblkSync();
+
+    // m4aSoundMain();  // TODO: sound
+}
+
+// Upload Wario OBJ character data to VRAM during VBlank (used in Scene7).
+// IDA at 0x800fe90: two 16-bit DMAs, dest = OBJ_VRAM0 and OBJ_VRAM0+0x400.
+// DMA mode: 16-bit (original uses DMA_ENABLE only, no DMA_32BIT flag).
+static void Title_Wario_VblkSync(void)
+{
+    if (Wario.usChrByte1)
+    {
+        REG_DMA3SAD = (u32)Wario.pChrAddr1;
+        REG_DMA3DAD = (u32)OBJ_VRAM0;
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_16BIT | DMA_SRC_INC | DMA_DEST_INC) << 16)
+                    | (Wario.usChrByte1 >> 1);
+    }
+
+    if (Wario.usChrByte2)
+    {
+        REG_DMA3SAD = (u32)Wario.pChrAddr2;
+        REG_DMA3DAD = (u32)(OBJ_VRAM0 + 0x400);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_16BIT | DMA_SRC_INC | DMA_DEST_INC) << 16)
+                    | (Wario.usChrByte2 >> 1);
+    }
 }
 
 // ---- Wario4 VCount interrupt handler ----
@@ -650,30 +696,27 @@ static void Initialize(int seq)
     REG_DISPCNT = DISPCNT_MODE_0;
     bg_regs_init();
 
-    // Clear OAM — set all 128 OBJs to fully disabled (attr0 bit 9=1)
-    // Using 0x0200 ensures no leftover sprites from previous scenes
+    // Clear OAM -- set all 128 OBJs to Y=160 (just off-screen bottom).
+    // IDA: v3 = 160 (0xA0); DMA SRC_FIXED from &v3 -> OAM, control 0x85000100.
+    // u32 value 0x000000A0 writes attr0=0x00A0 (Y=160), attr1=0x0000 (X=0).
+    // Count 0x100 = 256 32-bit words = 1024 bytes = entire OAM.
     uObjSize = 0;
     pObjEnd = (u16 *)OamBuf;
     {
-        volatile u32 a = 0x02000200;  // attr0=0x0200 (disabled), attr1=0x0200
+        volatile u32 a = 0x000000A0;
         REG_DMA3SAD = (u32)&a;
         REG_DMA3DAD = (u32)OAM;
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (128 * 8 >> 2);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | 0x100;
     }
 
+    // Initialize BG and OBJ affine/position parameters
+    bg_param_init();
     ob_param_init();
 
-    // Clear BG screenbases 16-23 with blank tile 0x3FF.
-    // Match original Init() behavior — only done at TSEQ_INIT, not between scenes.
-    // NOTE: Do NOT clear OBJ VRAM here. Scene4's car tiles rely on
-    // leftover BG tile data from Scene3 at 0x6010000 wrapping into the
-    // OBJ character block via GBA address mirroring in bitmap mode.
-    {
-        volatile u32 v = 0x03FF03FF;
-        REG_DMA3SAD = (u32)&v;
-        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x4000 >> 2);
-    }
+    // NOTE: Do NOT clear BG screenbases or tile VRAM here.
+    // IDA Initialize at 0x8003b84 does NOT clear VRAM between scenes.
+    // Cross-scene tile dependencies (Scene9->Scene7, Scene10->pyramid)
+    // require previous scene's data to persist in VRAM.
 
     usFadeTimer = 0;
     sLocalSeq = 0;
@@ -681,7 +724,7 @@ static void Initialize(int seq)
 
     switch (seq)
     {
-    case TSEQ_INIT:           Init();           break;
+    case TSEQ_INIT:           TitleInit();           break;
     case TSEQ_NINTENDO_INIT:  Nintendo_Init();  break;
     case TSEQ_SCENE0_INIT:    Scene0_Init();    break;
     case TSEQ_SCENE1_INIT:    Scene1_Init();    break;
@@ -743,17 +786,16 @@ int GameTitle(void)
     switch (sGameSeq)
     {
     case TSEQ_INIT:
-        REG_IE &= ~INTR_FLAG_GAMEPAK;
+        // (GAMEPAK interrupt not enabled -- skip original's disable)
         SetVblkFunc(TitVblkIntr0);
         REG_IE |= INTR_FLAG_VBLANK;
         GetEndingType();
+        // IDA: Initialize(v5) comes BEFORE the flag assignments.
+        // v5=0 for normal entry, v5=1 for skip-intro (TITLE_ENTRY_WARIOLAND).
+        Initialize(skipIntro);
         bQuickStart = 0;
         bMsgJapanese = ucLanguage;
         bEnding = 0;
-        // Always init normally first; skip-intro overrides sGameSeq below.
-        // Matches IDA: Initialize(v5) where v5=1 just bumps sGameSeq,
-        // then sGameSeq is overridden to 46 (TSEQ_QUICK_START).
-        Initialize(TSEQ_INIT);
         sGameSeq = skipIntro ? TSEQ_QUICK_START : TSEQ_NINTENDO_INIT;
         break;
 
@@ -763,33 +805,33 @@ int GameTitle(void)
 
     case TSEQ_PYRAMID_INIT:
         // Pyramid intro path: re-init interrupts and screen
-        REG_IE &= ~INTR_FLAG_GAMEPAK;
+        // (GAMEPAK interrupt not enabled -- skip original's disable)
         SetVblkFunc(TitVblkIntr0);
         REG_IE |= INTR_FLAG_VBLANK;
-        Init();
+        TitleInit();
         Initialize(TSEQ_PYRAMID_INIT);
         break;
 
     case TSEQ_ESCAPE_INIT:
         // Escape from pyramid path
-        REG_IE &= ~INTR_FLAG_GAMEPAK;
+        // (GAMEPAK interrupt not enabled -- skip original's disable)
         SetVblkFunc(TitVblkIntr0);
         REG_IE |= INTR_FLAG_VBLANK;
         bMsgJapanese = ucLanguage;
         GetEndingType();
-        Init();
+        TitleInit();
         Initialize(TSEQ_ESCAPE_INIT);
         break;
 
     case TSEQ_ENDING_INIT:
         // Ending cinematic path
-        REG_IE &= ~INTR_FLAG_GAMEPAK;
+        // (GAMEPAK interrupt not enabled -- skip original's disable)
         SetVblkFunc(TitVblkIntr0);
         REG_IE |= INTR_FLAG_VBLANK;
         bMsgJapanese = ucLanguage;
         bEnding = 1;
         GetEndingType();
-        Init();
+        TitleInit();
         Initialize(TSEQ_SCENE0_INIT);  // Start with scene 0 in ending mode
         break;
 
@@ -830,23 +872,23 @@ int GameTitle(void)
     case TSEQ_SUPER_HARD_EXEC: SuperHard_Exec(usFadeTimer++);  break;
 
     case TSEQ_PUSH_START:
-        Init();
+        TitleInit();
         result = TITLE_RESULT_START;
         break;
 
     case TSEQ_END:
-        Init();
+        TitleInit();
         result = TITLE_RESULT_END;
         break;
 
     case TSEQ_ESCAPE_END:
-        Init();
+        TitleInit();
         result = TITLE_RESULT_ESCAPE;
         break;
 
     case TSEQ_THE_END:
         ucResetStop = 0;
-        Init();
+        TitleInit();
         result = TITLE_RESULT_ENDING;
         break;
 

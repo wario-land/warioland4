@@ -1,4 +1,4 @@
-// Scene 9: Escape from pyramid — Wario runs out of collapsing pyramid
+// Scene 9: Escape from pyramid -- Wario runs out of collapsing pyramid
 //
 // Reuses Scene7 BG tiles + OBJ palette from scene9.
 // BG0: 512x256 16-color - pit background (scene7_bg_pit)
@@ -22,8 +22,17 @@ extern const u16 scene9_obj_Palette[112];
 extern const u8  scene9_obj_Char[];
 
 // Reuse scene7 BG data (pyramid interior)
+extern const u16 scene7_bg_Palette[256];
 extern const u8  scene7_bg_Char[];
 extern const u16 scene7_bg_pit[];
+
+// Fragment/debris init function -- stub for now
+// Original at 0x8008950 initializes 12+ fragment OBJs for pyramid escape.
+void scene9_fragment_Init(int kind)
+{
+    // TODO: implement fragment particle initialization
+    (void)kind;
+}
 
 // ---- Globals ----
 extern u16 sLocalSeq;
@@ -38,7 +47,13 @@ extern u32 uObjSize;
 
 void Scene9_Init(void)
 {
-    // Copy OBJ palette (112 entries)
+    // DMA BG palette (256 entries = 512 bytes, reuse scene7 palette)
+    // Matches IDA at 0x8007c96: scene7_bg_Palette -> BG_PLTT, control 0x80000100
+    REG_DMA3SAD = (u32)scene7_bg_Palette;
+    REG_DMA3DAD = (u32)BG_PLTT;
+    REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (256*2 >> 2);
+
+    // Copy OBJ palette (112 entries = 224 bytes)
     REG_DMA3SAD = (u32)scene9_obj_Palette;
     REG_DMA3DAD = (u32)OBJ_PLTT;
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (112*2 >> 2);
@@ -47,17 +62,27 @@ void Scene9_Init(void)
     LZ77UnCompVram((const u32 *)scene7_bg_Char, (void *)BG_VRAM);
     LZ77UnCompVram((const u32 *)scene9_obj_Char, (void *)OBJ_VRAM0);
 
-    // Clear screenbases 18-21 (0x9000-0xBFFF) with blank tile 0x3FF
-    // IDA disasm: DMA3CNT = 0x85000800 → DMA_32BIT | SRC_FIXED, count=0x800 words = 8192 bytes
+    // Fill screenbase 16 with 0xA0C5 pattern (2048 bytes, matches IDA 0x85000200)
     {
-        volatile u32 v = 0x03FF03FF;
-        REG_DMA3SAD = (u32)&v;
-        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x9000);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | 0x800;
+        volatile u32 p = 0xA0C5A0C5;
+        REG_DMA3SAD = (u32)&p;
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x800 >> 2);
     }
 
-    // UnPackScreen: pit background -> BG0
+    // Fill screenbase 18 with 0x3FF pattern (2048 bytes, matches IDA 0x85000200)
+    {
+        volatile u32 p2 = 0x03FF03FF;
+        REG_DMA3SAD = (u32)&p2;
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x9000);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x800 >> 2);
+    }
+
+    // UnPackScreen: pit background -> BG0 (screenbase 16, overwrites fill 1)
     UnPackScreen((const u16 *)scene7_bg_pit, (vu16 *)((u8 *)BG_VRAM + 0x8000));
+
+    // Initialize fragment/debris system for pyramid escape effects
+    scene9_fragment_Init(0);
 
     // BG control registers
     REG_BG0CNT = BGCNT_TXT512x256 | BGCNT_16COLOR | BGCNT_PRIORITY(0)
@@ -220,12 +245,10 @@ void Scene9_Exec(int time)
     // ---- OBJ rendering ----
     dst = (u16 *)OamBuf;
 
-    // Wario OBJ (visible in all states)
+    // Wario OBJ (visible in all states, multi-part via Wario_Move)
     if (ob_pos_y < 200)
     {
-        // Simplified single-sprite Wario OBJ
-        static const u16 wario_pattern[] = { 1, 0x40C8, 0x8078, 0x0200 };
-        dst = SetObj(wario_pattern, dst, ob_pos_x - bg_scroll_x, ob_pos_y);
+        dst = Wario_Move(ob_pos_x - bg_scroll_x, ob_pos_y, 0, 0, 0);
     }
 
     // Cat OBJ (visible from state 3)

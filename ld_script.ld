@@ -26,6 +26,13 @@ SECTIONS {
 
     } > IWRAM
 
+    save_data ALIGN(4) (NOLOAD) :
+    {
+        __save_data_start = .;
+        *.o(.save_data);
+        __save_data_end = .;
+    } > IWRAM
+
     /* BEGIN ROM DATA */
     . = 0x8000000;
 

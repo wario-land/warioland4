@@ -1,8 +1,8 @@
-// Ending newspaper — post-credits newspaper with "THE END" message
+// Ending newspaper -- post-credits newspaper with "THE END" message
 //
-// BG0: screenbase 16 — newspaper mask overlay
-// BG1: screenbase 17, 256x512 — newspaper background with cat shadow
-// BG2: screenbase 19 — "THE END" / ending details
+// BG0: screenbase 16 -- newspaper mask overlay
+// BG1: screenbase 17, 256x512 -- newspaper background with cat shadow
+// BG2: screenbase 19 -- "THE END" / ending details
 //
 // States (sLocalSeq):
 //   0: Decompress BG + OBJ tiles, enable display
@@ -48,7 +48,7 @@ static s16 sWork0, sWork1;
 void NewsEnd_Init(void)
 {
     // Clear screenbases 16-19 (0x8000-0x9FFF) with blank tiles
-    // IDA disasm: DMA3CNT = 0x85000800 → DMA_32BIT | SRC_FIXED, count=0x800 words = 8192 bytes
+    // IDA disasm: DMA3CNT = 0x85000800 -> DMA_32BIT | SRC_FIXED, count=0x800 words = 8192 bytes
     {
         volatile u32 v = 0x03FF03FF;
         REG_DMA3SAD = (u32)&v;
@@ -57,11 +57,11 @@ void NewsEnd_Init(void)
     }
 
     // UnPack tilemaps to VRAM:
-    // newspaper_mask → BG0 screenbase 16 (0x8000)
+    // newspaper_mask -> BG0 screenbase 16 (0x8000)
     UnPackScreen((const u16 *)newspaper_mask, (vu16 *)((u8 *)BG_VRAM + 0x8000));
-    // newspaper_cat → BG1 screenbase 18 (0x9000) — 256x512 mode
+    // newspaper_cat -> BG1 screenbase 18 (0x9000) -- 256x512 mode
     UnPackScreen((const u16 *)newspaper_cat, (vu16 *)((u8 *)BG_VRAM + 0x9000));
-    // newspaper_END → BG2 screenbase 19 (0x9800)
+    // newspaper_END -> BG2 screenbase 19 (0x9800)
     UnPackScreen((const u16 *)newspaper_END, (vu16 *)((u8 *)BG_VRAM + 0x9800));
 
     // BG1: 256x512, 16-color, priority 1, screenbase 17, charbase 0
@@ -137,7 +137,7 @@ void NewsEnd_Exec(int time)
         // Cat shadow rises back from -144 toward 0 (decelerating)
         if (bg_scroll_y >= 0)
         {
-            // Message text appears — set up pointers for typewriter
+            // Message text appears -- set up pointers for typewriter
             if (bMsgJapanese)
             {
                 ptr0 = (u16 *)((u8 *)BG_VRAM + 0x9910);  // BG2 screenbase 19, row offset

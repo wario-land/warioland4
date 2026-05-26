@@ -1,17 +1,18 @@
-// Scene 11: Angel sparkle sequence — post-escape celebration
+// Scene 11: Angel sparkle sequence -- post-escape celebration
 //
 // Reuses Scene10 BG data (jungle, light, pyramid) plus Scene10 OBJ palette.
 // OBJ: Princess floating, angel sprites, sparkle particles
 //
-// BG0: 256x256 — light effect (scene10_light)
-// BG1: 256x256 — jungle (scene10_jungle)
-// BG2: 256x256 — pyramid far (pyramid_bg3)
+// BG0: 256x256 -- light effect (scene10_light)
+// BG1: 256x256 -- jungle (scene10_jungle)
+// BG2: 256x256 -- pyramid far (pyramid_bg3)
 
 #include "../gba/gba.h"
 #include "../gameutils.h"
 #include "title.h"
 
 // ---- External data (reuses scene10) ----
+extern const u16 scene10_bg_Palette[];     // 96 entries (192 bytes)
 extern const u16 scene10_obj_Palette[256];
 extern const u8  scene10_obj_Char[];
 extern const u8  scene10_jungle_Char[];
@@ -38,6 +39,11 @@ extern u32 uObjSize;
 
 void Scene11_Init(void)
 {
+    // DMA BG palette (96 entries = 192 bytes, matches IDA 0x80000060)
+    REG_DMA3SAD = (u32)scene10_bg_Palette;
+    REG_DMA3DAD = (u32)BG_PLTT;
+    REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (96*2 >> 2);
+
     // DMA OBJ palette (reuses scene10)
     REG_DMA3SAD = (u32)scene10_obj_Palette;
     REG_DMA3DAD = (u32)OBJ_PLTT;
@@ -51,16 +57,26 @@ void Scene11_Init(void)
                    (void *)((u8 *)BG_VRAM + 0x340 * 32));
     LZ77UnCompVram((const u32 *)scene10_obj_Char, (void *)OBJ_VRAM0);
 
-    // Clear tile 0x3FF
+    // Fill screenbases 16-17 with 0x4340 pattern (4096 bytes = 2 screenblocks)
+    // Matches IDA at 0x800a388: 0x43404340 -> 0x6008000, control 0x85000400
     {
-        volatile u32 z = 0;
-        REG_DMA3SAD = (u32)&z;
-        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x7FE0);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (32 >> 2);
+        volatile u32 p = 0x43404340;
+        REG_DMA3SAD = (u32)&p;
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x1000 >> 2);
+    }
+
+    // Fill screenbase 18 with 0x3FF pattern (2048 bytes = 1 screenblock)
+    // Matches IDA at 0x800a3a2: 0x3FF03FF -> 0x6009000, control 0x85000200
+    {
+        volatile u32 p2 = 0x03FF03FF;
+        REG_DMA3SAD = (u32)&p2;
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x9000);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x800 >> 2);
     }
 
     // BG tilemaps
-    // BG0: light effect (screenbase 16)
+    // BG0: light effect (screenbase 16, 256x512 size uses screenbases 16-17)
     UnPackScreen((const u16 *)scene10_light, (vu16 *)((u8 *)BG_VRAM + 0x8000));
     // BG1: jungle (screenbase 17)
     UnPackScreen((const u16 *)scene10_jungle, (vu16 *)((u8 *)BG_VRAM + 0x8800));
@@ -68,12 +84,15 @@ void Scene11_Init(void)
     UnPackScreen((const u16 *)pyramid_bg3, (vu16 *)((u8 *)BG_VRAM + 0x9000));
 
     // BG control registers
-    REG_BG0CNT = BGCNT_TXT256x256 | BGCNT_16COLOR | BGCNT_PRIORITY(0)
+    // BG0: 256x512 (0x9000) for parallax scrolling effect, screenbase 16
+    REG_BG0CNT = BGCNT_TXT256x512 | BGCNT_16COLOR | BGCNT_PRIORITY(0)
                | BGCNT_SCREENBASE(16) | BGCNT_CHARBASE(0);
+    // BG1: 256x256, screenbase 17
     REG_BG1CNT = BGCNT_TXT256x256 | BGCNT_16COLOR | BGCNT_PRIORITY(1)
-               | BGCNT_SCREENBASE(18) | BGCNT_CHARBASE(0);
+               | BGCNT_SCREENBASE(17) | BGCNT_CHARBASE(0);
+    // BG2: 256x256, screenbase 18
     REG_BG2CNT = BGCNT_TXT256x256 | BGCNT_16COLOR | BGCNT_PRIORITY(2)
-               | BGCNT_SCREENBASE(19) | BGCNT_CHARBASE(0);
+               | BGCNT_SCREENBASE(18) | BGCNT_CHARBASE(0);
 
     // Initial scroll
     REG_BG0HOFS = 0; REG_BG0VOFS = 0;

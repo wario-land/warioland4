@@ -2,6 +2,7 @@
 #define TITLE_H
 
 #include "../gba/gba.h"
+#include "../wario/wario.h"
 
 // Title screen return values (from GameTitle)
 enum TitleResult {
@@ -94,6 +95,7 @@ int GameTitle2(void);
 void TitVCountIntr0(void);  // VCOUNT handler for Wario4 BG0 scroll
 
 // ---- Shared helpers (defined in title.c) ----
+void TitleInit(void);  // Screen reset -- clears palette, VRAM, display off
 void UnPackScreen(const u16 *src, vu16 *screen);
 void V_Wait(void);
 u16 *SetObj(const u16 *src, u16 *dst, int x, int y);
@@ -216,6 +218,11 @@ int  scene5_Anime11(int time, const u16 **pattern);
 int  scene5_Anime14(const u16 **pattern);
 int  scene5_Anime15(int time, const u16 **pattern);
 void scene5_Anime16(const u16 **pattern);
+void scene5_Rock1(const u16 **pattern);
+void scene5_Rock2(const u16 **pattern);
+void scene5_Rock3(const u16 **pattern);
+void scene5_Rock4(const u16 **pattern);
+u16 *Scene5_CarMove(int sLocalSeq, int time);  // multi-part car OBJ rendering
 void scene5_Tire(const u16 **pattern);
 
 #endif // TITLE_H

@@ -23,18 +23,18 @@ extern u8 ucEndingMessageKind; // 0x3000011
 enum{ NORMAL_MESSAGE, ALL_GET_MESSAGE, SHARD_MESSAGE };
 
 // Jewel piece collection flags (save data, 0x3000c13-0x3000c3f)
-extern u8 ucKakera1GetFlg;
-extern u8 ucKakera2GetFlg;
-extern u8 ucKakera3GetFlg;
-extern u8 ucKakera4GetFlg;
-extern u8 ucKakera5GetFlg;
-extern u8 ucKakera6GetFlg;
-extern u8 ucKakera7GetFlg;
-extern u8 ucKakera8GetFlg;
-extern u8 ucKakera9GetFlg;
-extern u8 ucKakera10GetFlg;
-extern u8 ucKakera11GetFlg;
-extern u8 ucKakera12GetFlg;
+extern u8 ucJewel1GetFlg;
+extern u8 ucJewel2GetFlg;
+extern u8 ucJewel3GetFlg;
+extern u8 ucJewel4GetFlg;
+extern u8 ucJewel5GetFlg;
+extern u8 ucJewel6GetFlg;
+extern u8 ucJewel7GetFlg;
+extern u8 ucJewel8GetFlg;
+extern u8 ucJewel9GetFlg;
+extern u8 ucJewel10GetFlg;
+extern u8 ucJewel11GetFlg;
+extern u8 ucJewel12GetFlg;
 // NORMAL_MESSAGE: The bosses has returned. let's get 12 tresures chest this time.
 // ALL_GET_MESSAGE: The bosses has returned.
 // SHARD_MESSAGE: You can now play the S-Hard mode.
@@ -54,6 +54,19 @@ extern u8 ucAllReset;   // hard reset, 0x3000018
 
 extern u8 ucSaveNum;   // save slot number, 0x3000019
 
+// Save slot metadata (8 bytes per slot, 2 slots at 0x30031d0)
+// Matches IDA SaveReady at 0x30031d0
+struct SaveReadyDef {
+    u8 Flg;      // 0=empty, 1=valid, 2=discontinued, 3=corrupted
+    u8 DisCon;   // Disconnect/continue flag
+    u8 World;    // Current world number
+    u8 Stage;    // Current stage number
+    u8 Level;    // Difficulty level
+    u8 pad[3];   // Padding to 8 bytes
+};
+extern struct SaveReadyDef SaveReady[2]; // 2 save slots x 8 bytes, 0x30031d0
+extern u8 OReady[72];    // OBJ animation state, 0x3004a70
+
 extern u8 ucBossPause;  // 0x300001a
 extern u8 ucBossRoomProgress;  // 0x300001b
 
@@ -65,7 +78,7 @@ extern u8 ucResetStop;  //key reset 0:enabled 1:disabled, 0x300001e
 extern u8 ucAutoDemoSW;  // 0x300001f
 extern u8 ucAutoDemoNum;  // 0x3000020
 
-extern u8 ucGmapSubSeq;  // 0x3000021
+extern u8 ucWorldMapSubSeq;  // 0x3000021
 extern u8 ucTitle2f;   // set 1 when entering the game from Title 2, 0x3000022
 
 extern u8 ucCurrentLevelDoorDataTableID; // 0x3000023 (save)
@@ -74,8 +87,8 @@ extern u8 ucRoomID;   // 0x3000024
 extern u8 ucGateID;   // 0x3000025 (save)
 extern u8 ucGateType;   // 0x3000026 (save)
 
-extern u8 ucTekiGroup;  // 0x3000027 (save)
-extern u8 ucTekiKowareFlg; // 0x3000028, Destroys blocks with "enemy-only" hits. 0: OFF
+extern u8 ucEnemyGroup;  // 0x3000027 (save)
+extern u8 ucEnemyBreakFlag; // 0x3000028, Destroys blocks with "enemy-only" hits. 0: OFF
 
 extern u16 usAlpfaBLD;   // 0x300002a (set and clear with VBLK)
 extern u16 usBldCnt;   // 0x300002c (set and clear with VBLK)
@@ -88,19 +101,19 @@ extern u8 ucKeyPri;   // 0x3000034, Highest priority for the key. 0: No BG speci
 extern u8 ucBgCountDown;  // 0x3000035, BG event management after the SW is pressed
 extern u8 ucBgCDcnt;   // 0x3000036
 
-extern u8 ucHblkFlg;   // 0x3000037, HBLK processing type branch flag
+extern u8 ucHblankFlag;   // 0x3000037, HBLK processing type branch flag
 
 extern u8  ucAlphaSw;   // 0x3000038, (for external operation)
 
-extern u16 usTekiBgPosX;  // 0x300003a, SCR position setting from enemy (BG0-PosX) (save)
-extern u16 usTekiBgPosY;  // 0x300003c, SCR position setting from enemy (save)
+extern u16 usEnemyBgPosX;  // 0x300003a, SCR position setting from enemy (BG0-PosX) (save)
+extern u16 usEnemyBgPosY;  // 0x300003c, SCR position setting from enemy (save)
 
 extern u16 usDisConR;   // 0x300003e, Number of broken blocks (for interrupted save) (save)
 extern u32 DisConSum;   // 0x3000040, Sum check (probably unnecessary)
 
 extern u8 ucFlashLoop;  // 0x3000044, Screen FLASH-WORK
 
-extern u8 ucBgYoki;   // 0x3000045, Yoki Room BG-EVENT
+extern u8 ucBgExpected;   // 0x3000045, Expected Room BG-EVENT
 
 extern u8 ucBgKakiStop;  // 0x3000046, Stop BG rewriting
 
@@ -141,9 +154,9 @@ struct RoomHeaderDef
     u8  Layer3Scrolling;
     u8  RenderEffect;
     u8  DATA_1B;
-    u8 *ucTekiData_Hard; //Hard
-    u8 *ucTekiData_Normal; //Normal
-    u8 *ucTekiData_SHard; //SHard
+    u8 *ucEnemyData_Hard; //Hard
+    u8 *ucEnemyData_Normal; //Normal
+    u8 *ucEnemyData_SHard; //SHard
     u8  RasterKind;
     u8  Water;
     u16 usVolume; // BGM Volume
@@ -154,7 +167,7 @@ struct PyakuwariDef
 {
  u16 usField; // 0x30000a0
  u16 usKoka;  // 0x30000a2, 01(in water) 00(else)
- u16 usTeki;  // 0x30000a4
+ u16 usEnemy;  // 0x30000a4
 };
 extern struct PyakuwariDef Pyaku;
 
@@ -176,15 +189,15 @@ struct BgWinDef
 extern struct BgWinDef BgWin0; // 0x30000c0
 extern struct BgWinDef BgWin1;
 
-struct JishinDef
+struct EarthquakeDef
 {
  u8 Pow; // Setting frame fluctuation
  u8 Fcnt; // Initial value 0 or 2 or greater
  u8 Kind; // 0 or 1
  u8 Stat; // 0 or 1
 };
-extern struct JishinDef Jishin; // 0x30000cb
-extern struct JishinDef YureX; // unused in the release version (?)
+extern struct EarthquakeDef Earthquake; // 0x30000cb
+extern struct EarthquakeDef ShakeX; // unused in the release version (?)
 
 struct FadeDef
 {
@@ -301,6 +314,19 @@ extern u16 usFadeTimer; // 0x300188e
 extern u16 usGatePosX, usGatePosY; // 0x3001890
 extern u8 ucDemoSwitch; // 0x3001894
 
+// Tile decompression (used by title, ready, select, and game screens)
+// Decompress LZ77-compressed data directly to VRAM (uses DMA-safe writes)
+void LZ77UnCompVram(const u32 *src, void *dest);
+
+// MapLH_kaitou: decompress tilemap data in the game's custom RLE format.
+// mode: 0 = ASC-type (first byte of src is tilemap type: 0=256x256, 1/2=512x256, etc.)
+//       1 = 24-bit size prefix
+//       2+ = direct copy
+// src: compressed data pointer
+// dest: destination VRAM address (u16 tile entries written at 2-byte stride)
+// Returns the number of bytes decompressed.
+int MapLH_kaitou(u8 mode, const u8 *src, u8 *dest);
+
 // re-implement the classic c standard functions here,
 // since the gcc will call things like memset(..) and other functions
 // but we don't want to use dependencies
@@ -311,5 +337,17 @@ void *memset(void *dest, int value, u32 len);
 extern IntrFunc sVblkFunc;
 void SetVblkFunc(IntrFunc fnc);
 
+// Palette fade DMA: copies precomputed faded palette from EWRAM to hardware
+// palette RAM. Called each frame during fade transitions.
+// Matches IDA FadeColor_DMA at 0x8072888.
+void FadeColor_DMA(void);
+
+// Clear full palette RAM using DMA (1024 bytes -> 0x05000000).
+// Used by delete screen and other screens that need a fresh palette.
+void ClearGraphicRam(void);
+
+// Fill OamBuf with disabled OBJ entries (Y=208, hidden).
+// Sets ucCntObj to 0.
+void ClearOamBuf(void);
 
 #endif // GAMEUTILS_H

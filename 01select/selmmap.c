@@ -1,11 +1,11 @@
-// Mini map scene (mmap) — stage select within a world
+// Mini map scene (mmap) -- stage select within a world
 //
 // After the player selects a world on the dmap (world map), the mini map
 // shows all 6 stages within that world. Wario stands at the current stage
 // and the player moves left/right to select different stages.
 //
 // Each world has this layout:
-//   Stage 1 → Stage 2 → Stage 3 → Stage 4 → Mini Game → Boss Door
+//   Stage 1 -> Stage 2 -> Stage 3 -> Stage 4 -> Mini Game -> Boss Door
 //
 // Stage completion indicators:
 //   - Jewel shards: collected from each stage (4 per world)
@@ -22,7 +22,7 @@
 //
 // Navigation:
 //   LEFT/RIGHT: Move Wario to adjacent stage
-//   A: Select current stage → transition to posing (KIME)
+//   A: Select current stage -> transition to posing (KIME)
 //   B: Go back to world map (DMAP)
 
 #include "select.h"
@@ -74,7 +74,7 @@ void SelectMmapInit(void)
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (256*2 >> 2);
 
     // ---- Decompress BG tiles to VRAM ----
-    // minimap_Char is raw 4bpp tile data (not LZ77 compressed — direct copy)
+    // minimap_Char is raw 4bpp tile data (not LZ77 compressed -- direct copy)
     REG_DMA3SAD = (u32)minimap_Char;
     REG_DMA3DAD = (u32)BG_VRAM;
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (0x3000 >> 2);
@@ -85,22 +85,22 @@ void SelectMmapInit(void)
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (0x1000 >> 2);
 
     // ---- Copy screen tilemaps to VRAM ----
-    // BG0: base terrain map → screenbase 24 (0xC000)
+    // BG0: base terrain map -> screenbase 24 (0xC000)
     REG_DMA3SAD = (u32)minimap0_0_Screen;
     REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0xC000);
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (0x800 >> 2);
 
-    // BG1: stage overlays → screenbase 26 (0xD000)
+    // BG1: stage overlays -> screenbase 26 (0xD000)
     REG_DMA3SAD = (u32)minimap0_1_Screen;
     REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0xD000);
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (0x800 >> 2);
 
-    // BG2: effects → screenbase 28 (0xE000)
+    // BG2: effects -> screenbase 28 (0xE000)
     REG_DMA3SAD = (u32)minimap0_2_Screen;
     REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0xE000);
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (0x1000 >> 2);
 
-    // BG3: message text → screenbase 30 (0xF000)
+    // BG3: message text -> screenbase 30 (0xF000)
     REG_DMA3SAD = (u32)minimap0_3_Screen;
     REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0xF000);
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (0x800 >> 2);
@@ -155,16 +155,16 @@ int GameSelectMmap(void)
                 bMmapMoving = 1;
             }
         }
-        // A button: select current stage → go to posing
+        // A button: select current stage -> go to posing
         else if (usTrg & A_BUTTON)
         {
             ucStageNum = ucMmapCurrentStage;
-            sGameSeq = SEL_SEQ_MMAP_EXIT;
+            sGameSeq = FOUT_MMAP;
         }
         // B button: go back to world map
         else if (usTrg & B_BUTTON)
         {
-            sGameSeq = SEL_SEQ_DMAP_INIT;
+            sGameSeq = INIT_DMAP_2;
         }
     }
     else

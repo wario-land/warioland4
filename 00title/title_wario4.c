@@ -1,6 +1,6 @@
 // Wario4 Title Logo Scene - "WARIO LAND 4" main title screen
 //
-// Wario4 Title Logo Scene — "WARIO LAND 4" main title screen
+// Wario4 Title Logo Scene -- "WARIO LAND 4" main title screen
 //
 // Display layers:
 //   BG0: 512x256 16-color - night cityscape / title logo
@@ -60,12 +60,14 @@ extern const u16 scene5_00B[], scene5_00C[], scene5_00D[];  // hand cursor
 // Global state variables (defined in title.c, IWRAM_DATA)
 extern s16 sWork0, sWork1, sWork2, sWork3, sWork4, sWork5;
 extern s16 bg_scroll_x, bg_scroll_y;
+extern u16 bg_rotate, bg_scale_x, bg_scale_y;
 extern u16 uEVA, uEVB, uEVY;
 extern u16 sLocalSeq;
 extern u32 uLocalTime;
 extern u8  bQuickStart, bMsgJapanese;
 extern u16 *pObjEnd;
 extern u32 uObjSize;
+extern const s16 sin_cos_table[256 + 64];
 
 // ======================================================================
 //  Helper functions
@@ -86,6 +88,98 @@ static void CarPaletteChange(int index)
 }
 
 // ======================================================================
+//  Scene5_CarMove -- Multi-part car OBJ rendering
+// ======================================================================
+// Matches IDA scene5_car_move at 0x80065ec.
+// Renders the complete car (10+ OBJs): two affine halves, top, 4 rock
+// particles behind, shake effect, anime parts, tires, and other details.
+// Returns the next OAM destination pointer.
+//
+// Parameters: sLocalSeq (current Wario4 state), time (frame counter)
+// Global state: sWork1=car Y, sWork2=car X, bg_rotate=shake phase
+//
+u16 *Scene5_CarMove(int sLocalSeq, int time)
+{
+    u16 *dst = (u16 *)OamBuf;
+    const u16 *pattern;
+    int rock_x, shake_y;
+    int car_y = sWork1;
+    int car_x = sWork2;
+
+    // Affine car halves (only during state 2: night scene)
+    if (sLocalSeq == 2)
+    {
+        scene5_Anime10(time, &pattern);
+        dst = SetObj(pattern, dst, car_x, car_y);
+
+        scene5_Anime11(time, &pattern);
+        dst = SetObj(pattern, dst, car_x, car_y);
+
+        bg_rotate = 0;
+    }
+
+    // Car top detail (states 7+: after night transition)
+    if (sLocalSeq > 6)
+    {
+        scene5_Anime14(&pattern);
+        dst = SetObj(pattern, dst, car_x, car_y);
+    }
+
+    // Rock/smoke particles behind car + car shake (states 3+)
+    if (sLocalSeq > 2)
+    {
+        // 4 rock particles scroll horizontally with time, Y=400 (below screen)
+        // Each particle has a different phase offset
+        rock_x = (8 * time + 500) & 0x7FF;
+        if (rock_x > 400) rock_x = 400;
+        scene5_Rock1(&pattern);
+        dst = SetObj(pattern, dst, rock_x, 400);
+
+        rock_x = (8 * time + 800) & 0x7FF;
+        if (rock_x > 400) rock_x = 400;
+        scene5_Rock2(&pattern);
+        dst = SetObj(pattern, dst, rock_x, 400);
+
+        rock_x = (8 * time + 1300) & 0x7FF;
+        if (rock_x > 400) rock_x = 400;
+        scene5_Rock3(&pattern);
+        dst = SetObj(pattern, dst, rock_x, 400);
+
+        rock_x = (8 * time + 2000) & 0x7FF;
+        if (rock_x > 400) rock_x = 400;
+        scene5_Rock4(&pattern);
+        dst = SetObj(pattern, dst, rock_x, 400);
+
+        // Car shake: Y oscillates using sin table at bg_rotate phase
+        bg_rotate++;
+        shake_y = car_y - (s16)((s32)sin_cos_table[(u8)bg_rotate] * 4 / 256);
+        scene5_Anime2(time, &pattern);
+        dst = SetObj(pattern, dst, car_x, shake_y);
+    }
+
+    // Car detail animations (all states, rendered on top of car body)
+    scene5_Anime9(time, &pattern);
+    dst = SetObj(pattern, dst, car_x, car_y);
+
+    scene5_Anime1(time, &pattern);
+    dst = SetObj(pattern, dst, car_x, car_y);
+
+    // Two tires
+    scene5_Tire(&pattern);
+    dst = SetObj(pattern, dst, car_x, car_y);
+    dst = SetObj(pattern, dst, car_x, car_y);
+
+    // Final car animation layer
+    scene5_Anime0(time, &pattern);
+    dst = SetObj(pattern, dst, car_x, car_y);
+
+    // Apply affine matrix for car scaling/rotation
+    SetObjPABCD(0, bg_rotate, bg_scale_x, bg_scale_y);
+
+    return dst;
+}
+
+// ======================================================================
 //  Wario4_Init - Set up all BG layers, load tilemaps, configure blending
 // ======================================================================
 //
@@ -100,42 +194,23 @@ void Wario4_Init(void)
 {
     if (bQuickStart)
     {
-        // Clear full BG VRAM and OBJ VRAM: prevents leftovers from previous scene
-        {
-            volatile u32 z = 0;
-            REG_DMA3SAD = (u32)&z;
-            REG_DMA3DAD = (u32)PLTT;
-            REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (PLTT_SIZE >> 2);
-        }
-        {
-            volatile u32 z = 0;
-            REG_DMA3SAD = (u32)&z;
-            REG_DMA3DAD = (u32)OBJ_VRAM0;
-            REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x4000 >> 2);
-        }
-        {
-            volatile u32 f = 0x03FF03FF;
-            REG_DMA3SAD = (u32)&f;
-            REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
-            REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x4000 >> 2);
-        }
-        REG_BLDCNT = 0;
-        REG_BLDALPHA = 0;
-        REG_DISPCNT = DISPCNT_MODE_0;
-        // m4aMPlayFadeOut, m4aSongNumStartOrChange TODO: sound
+        // IDA Init at 0x8003d5c: only clears palette RAM, BLDCNT, BLDALPHA, DISPCNT.
+        // Does NOT clear VRAM -- preserving previous scene's tile data.
+        TitleInit();
+        // m4aMPlayFadeOut(&m4a_mplay001, 12);  // TODO: sound
+        // m4aSongNumStartOrChange(299);         // TODO: sound
+        // m4aSongNumStartOrChange(636);         // TODO: sound
     }
     else
     {
-        // Non-quickstart: clear BG2 left+right screenbases with 0x3FF
-        // BG2_TOP = 0xA000, left half = screenbase 20, right = screenbase 21
+        // Non-quickstart: Fill screenbases 20-21 (BG2 area, VRAM+0xA000/0xA800)
+        // with blank tile 0x3FF. Matches IDA Wario4_Init at 0x8005e34:
+        // two fills ctx=0x85000100 to 0x600A000 and 0x600A800.
         {
             volatile u32 v = 0x03FF03FF;
             REG_DMA3SAD = (u32)&v;
             REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0xA000);
-            REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x400 >> 2);
-            REG_DMA3SAD = (u32)&v;
-            REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0xA800);
-            REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x400 >> 2);
+            REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x800 >> 2);
         }
     }
 
@@ -154,7 +229,10 @@ void Wario4_Init(void)
     // Quick-start:  load title logo directly (skips night scene)
     if (bQuickStart)
     {
-        UnPackScreen(wario4_logo, (vu16 *)((u8 *)BG_VRAM + 0x8000));
+        // IDA: selects warioGBA_logo (Japanese) or wario4_logo (English)
+        // based on bMsgJapanese flag.
+        UnPackScreen(bMsgJapanese ? (const u16 *)warioGBA_logo : (const u16 *)wario4_logo,
+                     (vu16 *)((u8 *)BG_VRAM + 0x8000));
         CarPaletteChange(15);  // set car to daytime colors
     }
     else
@@ -261,10 +339,14 @@ void Wario4_Exec(int time)
     // ================================================================
     // Case 1: Decompress OBJ tiles, enable display hardware
     // ================================================================
-    // Quick-start path: skips night->day transition, jumps to case 6.
-    // Normal path:      continues to case 2 for the transition.
-    // Display is enabled unconditionally (original sets DISPCNT=0x1F00).
+    // Clear OBJ VRAM FIRST (before decompression!) to prevent leftover
+    // sprite tiles from previous scenes appearing.
+    // Original IDA does NOT clear OBJ VRAM at all -- LZ77 overwrites what it needs.
+    // We clear here defensively but BEFORE the decompression.
     case 1:
+        // Decompress OBJ tiles to VRAM. IDA does NOT clear OBJ VRAM first --
+        // the LZ77 decompression writes only the tiles it needs, and leftover
+        // tile data from previous scenes may be referenced by shared OBJ patterns.
         LZ77UnCompVram((const u32 *)scene5_obj_Char, (void *)OBJ_VRAM0);
 
         if (bQuickStart)
@@ -273,20 +355,13 @@ void Wario4_Exec(int time)
         }
         else
         {
-            // Set up VCOUNT interrupt at scanline 151 for BG0 scroll
+            // Set up VCOUNT interrupt at scanline 151 for BG0 night-scene parallax.
+            // TitVCountIntr0 overrides BG0VOFS per scanline to create the
+            // horizontal scroll shearing effect during the night->day transition.
             gInterruptHandler.gVCountInterruptHandlerFunc = TitVCountIntr0;
             REG_DISPSTAT = (REG_DISPSTAT & 0xFF) | (151 << 8) | DISPSTAT_VCOUNT_INTR;
             REG_IE |= INTR_FLAG_VCOUNT;
             sLocalSeq++;
-        }
-
-        // Clear OBJ VRAM before decompressing new OBJ tiles.
-        // Prevents leftover sprite tiles from previous scenes appearing.
-        {
-            volatile u32 z = 0;
-            REG_DMA3SAD = (u32)&z;
-            REG_DMA3DAD = (u32)OBJ_VRAM0;
-            REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x4000 >> 2);
         }
 
         REG_DISPCNT = DISPCNT_MODE_0
@@ -316,11 +391,13 @@ void Wario4_Exec(int time)
         if (sWork1 > 148)
             sWork1--;
 
-        // BG0HOFS is driven by VCOUNT handler TitVCountIntr0 (set up in case 1)
-        // BG0VOFS is also driven by VCount (fixed at 95)
+        // BG0HOFS = -2 * time: horizontal parallax driven per-frame
+        // IDA: MEMORY[0x4000010] = -2 * a1
+        REG_BG0HOFS = -(time << 1);
 
         // Scroll BG0 upward (Y decreases from 80 toward 0) via bg_scroll_y
-        // This ALSO sets BG0VOFS here, but VCount handler overrides it each scanline
+        // VCount handler TitVCountIntr0 overrides BG0VOFS per scanline for
+        // the night-scene parallax effect (REG_BG0VOFS=95, HOFS based on usFadeTimer)
         if (bg_scroll_y > 0)
         {
             if (bg_scroll_y > 10 && (time & 3) == 3)
@@ -416,7 +493,7 @@ void Wario4_Exec(int time)
             sWork0 = 109;
 
     // ================================================================
-    // Case 6: Brightness reached — show stable title screen
+    // Case 6: Brightness reached -- show stable title screen
     // ================================================================
     // Switch from alpha blend to darken effect on all BGs.
     // This creates the final title screen look with the logo clearly
@@ -447,17 +524,18 @@ void Wario4_Exec(int time)
 
         if (++uLocalTime > 3600)
         {
-            // Auto-demo timeout: fade to black
-            if ((usFadeTimer & 3) == 3)
-            {
-                if (uEVY < 16) uEVY++;
-                REG_BLDY = uEVY;
-            }
+            // Auto-demo timeout: fade to black, then start demo
+            FadeInc(3);
             if (uEVY == 16)
+            {
+                // AutoDemo_Ready_Run();  // TODO: auto-demo (IDA 0x807504c)
                 sLocalSeq++;
+            }
         }
         else if (usTrg == A_BUTTON || usTrg == START_BUTTON)
         {
+            // m4aSongNumStartOrChange(298);  // TODO: sound
+            // WarioVoiceSet(0);              // TODO: sound (IDA 0x8085bdc)
             uLocalTime = 0;
             sLocalSeq++;
         }
@@ -500,12 +578,7 @@ void Wario4_Exec(int time)
     // FadeInc(0): EVY increments every frame (no interval divisor).
     // When fully dark (EVY=16), advance to next game sequence.
     case 11:
-        if ((usFadeTimer & 0) == 0)  // always true — fade every frame
-        {
-            if (uEVY < 16) uEVY++;
-            REG_BLDY = uEVY;
-        }
-        if (uEVY == 16)
+        if (FadeInc(0))
             sGameSeq++;
         break;
 
@@ -519,38 +592,36 @@ void Wario4_Exec(int time)
     REG_BG3HOFS = -(s16)(time >> 4);    // -time/16  (slowest)
 
     // ---- OBJ sprite rendering (matching IDA Wario4_Exec) ----
-    // Uses SetObj with position offsets: car at (sWork2, sWork1),
-    // smoke at (sWork0, 76), cursor/text at (74, 76).
-    // Original calls scene5_car_move (complex multi-part car) and
-    // scene5_Anime15-18 for animation patterns.
+    // IDA renders in this order:
+    //   1. scene5_car_move (multi-part car with affine) -- ALWAYS rendered
+    //   2. scene5_Anime16 (smoke exhaust) -- when sLocalSeq > 4
+    //   3. scene5_Anime6 (hand cursor) -- when sLocalSeq == 7
+    //   4. scene5_Anime7 (PUSH START text) -- when sLocalSeq > 7
     {
         u16 *dst = (u16 *)OamBuf;
         const u16 *pattern;
 
-        // Car + smoke: visible during states 2-10
-        if (sLocalSeq >= 2 && sLocalSeq <= 10)
+        // Multi-part car: car body halves, tires, rocks, shake, details
+        dst = Scene5_CarMove(sLocalSeq, time);
+
+        // Smoke exhaust at (sWork0, 76) -- state 5+ (matching IDA: sLocalSeq > 4)
+        if (sLocalSeq > 4)
         {
-            // Car body at (sWork2, sWork1) with affine params
-            SetObjPABCD(0, 0, 0x100, 0x100);  // identity matrix
-
-            // Animate car body (scene5_Anime15: 42-frame cycle)
-            scene5_Anime15(time, &pattern);
-            dst = SetObj(pattern, dst, sWork2, sWork1);
-
-            // Smoke exhaust at (sWork0, 76) — scene5_Anime16 pattern
             scene5_Anime16(&pattern);
             dst = SetObj(pattern, dst, sWork0, 76);
         }
 
-        // PUSH START hand cursor: visible during state 7
+        // Hand cursor at (74, 76) -- state 7 only
+        // TODO: super-hard mode (sWork5!=0) uses scene5_Anime17 (IDA 0x800c340)
         if (sLocalSeq == 7)
         {
             scene5_Anime6(time, &pattern);
             dst = SetObj(pattern, dst, 74, 76);
         }
 
-        // PUSH START text: visible during state 7+
-        if (sLocalSeq >= 7)
+        // PUSH START text at (74, 76) -- states 8+
+        // TODO: super-hard mode (sWork5!=0) uses scene5_Anime18 (IDA 0x800c37c)
+        if (sLocalSeq > 7)
         {
             scene5_Anime7(time, &pattern);
             dst = SetObj(pattern, dst, 74, 76);

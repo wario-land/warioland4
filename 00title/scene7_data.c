@@ -1165,7 +1165,7 @@ const u8 scene7_smoke_Char2[] ALIGNED(4) = {
 0x00,0x03,0x00,0x07,0x33,0x30,0x16,0x60,0x01,0x00,0x00,0x00,
 };
 
-// Pit/hole tilemap for Scene 9 — extracted from IDA ROM
+// Pit/hole tilemap for Scene 9 -- extracted from IDA ROM
 // UnPackScreen RLE format: header (bits 15-5=pos, bits 4-0=count+1),
 //   bit 15=1: run of same tile; bit 15=0: run of incrementing tiles
 const u16 scene7_bg_pit[] ALIGNED(4) = {

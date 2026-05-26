@@ -1,41 +1,88 @@
-// Select screen — world map, level select, mini map, room select
+// Select screen -- world map, level select, mini map, room select
 #ifndef SELECT_H
 #define SELECT_H
 
 #include "../gba/gba.h"
 
 // ---- Select sub-modes (sGameSeq values within GameSelect) ----
+// These values match the IDA Pro / wl4leaks select state machine exactly.
+// The GameSelect dispatcher uses a jump table indexed by these values.
+//
+// Flow pattern for each screen: INIT_* -> FIN_* (fade-in) -> MAIN (loop) -> FOUT_* (fade-out)
+// Multiple INIT variants exist for different entry contexts:
+//   _1 = first time / from title
+//   _2 = returning from sub-screen
+//   _3 = from ready/file-select (new game)
+//   _4 = from demo completion
+//   _5 = after special event (tutorial clear, boss clear)
 enum SelectGameSeq {
-    SEL_SEQ_DMAP_INIT = 0,
-    SEL_SEQ_DMAP_MAIN,
-    SEL_SEQ_DMAP_EXIT,
+    // ---- DMAP: World Map (dungeon map) ----
+    INIT_DMAP_1 = 0,    // First entry from title/intro
+    FIN_DMAP = 1,       // Fade-in to world map
+    DMAP = 2,           // Main world map loop (Wario walks, player selects)
+    FOUT_DMAP = 3,      // Fade-out from world map
+    INIT_DMAP_2 = 4,    // Entry from stage map (MMAP) returning
+    INIT_DMAP_3 = 5,    // Entry from file select / ready (pyramid intro done)
+    INIT_DMAP_4 = 6,    // Entry for start demo (opening cutscene)
+    INIT_DMAP_5 = 7,    // Entry for tutorial/boss clear demo
 
-    SEL_SEQ_DORA_INIT = 6,
-    SEL_SEQ_DORA_MAIN,
-    SEL_SEQ_DORA_EXIT,
+    // ---- SMAP: Stage Map (world overview) ----
+    FIN_SMAP = 8,       // Fade-in to stage map
+    SMAP = 9,           // Main stage map loop
+    FOUT_SMAP = 10,     // Fade-out from stage map
+    INIT_SMAP_2 = 11,   // Entry variant 2
+    INIT_SMAP_3 = 12,   // Entry variant 3
+    INIT_SMAP_4 = 13,   // Entry variant 4
+    INIT_SMAP_5 = 14,   // Entry variant 5 (from room, after stage clear)
 
-    SEL_SEQ_MMAP_INIT = 12,
-    SEL_SEQ_MMAP_MAIN,
-    SEL_SEQ_MMAP_EXIT,
+    // ---- DORA: Door/CD Transition Animation ----
+    INIT_DORA = 15,     // Init door animation
+    FIN_DORA = 16,      // Fade-in for door
+    DORA = 17,          // Main door animation
+    SCORE_TALLY = 18,        // Score tally / production screen
+    FOUT_DORA = 19,     // Fade-out from door
+    INIT_DORA_2 = 20,   // Door entry variant 2 (from stage end type 2)
 
-    SEL_SEQ_KIME_INIT = 18,
-    SEL_SEQ_KIME_MAIN,
-    SEL_SEQ_KIME_EXIT,
+    // ---- SELOUT: Select-Out Transition ----
+    INIT_SELOUT = 21,   // Init select-out
+    FIN_SELOUT = 22,    // Fade-in select-out
+    SELOUT = 23,        // Main select-out
+    FOUT_SELOUT = 24,   // Fade-out select-out
 
-    SEL_SEQ_ROOM_INIT = 24,
-    SEL_SEQ_ROOM_MAIN,
-    SEL_SEQ_ROOM_EXIT,
+    // ---- SELDEMO: Select Demo ----
+    INIT_SELDEMO = 25,  // Init select demo
+    FIN_SELDEMO = 26,   // Fade-in select demo
+    SELDEMO = 27,       // Main select demo
+    FOUT_SELDEMO = 28,  // Fade-out select demo
 
-    SEL_SEQ_JUMP_INIT = 30,
-    SEL_SEQ_JUMP_MAIN,
-    SEL_SEQ_JUMP_EXIT,
+    // ---- SELPOSE: Character Posing (stage name display) ----
+    INIT_SELPOSE = 29,  // Init posing screen
+    FIN_SELPOSE = 30,   // Fade-in posing
+    SELPOSE = 31,       // Main posing loop
+    FOUT_SELPOSE = 32,  // Fade-out posing
 
-    SEL_SEQ_BOSS_DOOR_INIT = 36,
-    SEL_SEQ_BOSS_DOOR_MAIN,
-    SEL_SEQ_BOSS_DOOR_EXIT,
+    // ---- MMAP: Mini Map (stage select within world) ----
+    INIT_MMAP_1 = 33,   // Init mini map (first entry)
+    FIN_MMAP = 34,      // Fade-in mini map
+    MMAP = 35,          // Main mini map loop
+    FOUT_MMAP = 36,     // Fade-out mini map
+    INIT_MMAP_2 = 37,   // Mini map entry variant 2
+    INIT_MMAP_3 = 38,   // Mini map entry variant 3 (from file select, continue game)
+    INIT_MMAP_4 = 39,   // Mini map entry variant 4 (from mini game)
+    MMAP_WAIT = 40,     // Mini map wait state
 
-    SEL_SEQ_STAGE_EXIT = 42,
-    SEL_SEQ_SELECT_EXIT = 46,
+    // ---- BOSS_DOOR: Boss Door Screen ----
+    INIT_BOSS_DOOR = 41,    // Init boss door
+    FIN_BOSS_DOOR = 42,     // Fade-in boss door
+    BOSS_DOOR = 43,         // Main boss door
+    FOUT_BOSS_DOOR = 44,    // Fade-out boss door
+    INIT_BOSS_DOOR_2 = 45,  // Boss door entry variant 2
+
+    // ---- SROOM: Save Room (after stage complete) ----
+    INIT_SROOM = 46,    // Init save room
+    FIN_SROOM = 47,     // Fade-in save room
+    SROOM = 48,         // Main save room loop
+    FOUT_SROOM = 49,    // Fade-out save room
 };
 
 // ---- Directions ----
@@ -131,13 +178,18 @@ extern u8  ucSelectJewelFlag;
 // ---- Function declarations ----
 void GameSelect(void);
 
-// Helper functions
+// Fade helpers
+int  SelectFadeIn(int interval);
+int  SelectFadeOut(int interval);
 int  SelectFadeWait(int duration);
 int  SelectWindowClose(void);
 int  SelectWindowOpen(void);
 
 // Sub-mode functions (defined in seldmap.c)
 void SelectDmapInit(void);
+void SelectDmapInit3(void);   // Entry from file select (pyramid intro done, start demo)
+void SelectDmapInit4(void);   // Entry for start demo
+void SelectDmapInit5(void);   // Entry for tutorial/boss clear demo
 int  GameSelectDmap(void);
 void SelectDmapOamCreate(void);
 
@@ -145,5 +197,8 @@ void SelectDmapOamCreate(void);
 void SelectMmapInit(void);
 int  GameSelectMmap(void);
 void SelectMmapOamCreate(void);
+
+// DMAP IWRAM variables (accessed by select.c VBlank handler)
+extern s16 sDmapBgPosY;
 
 #endif // SELECT_H

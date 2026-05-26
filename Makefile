@@ -11,7 +11,7 @@ OBJCOPY	=	"E:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2020-q4-major/bi
 .CFILES		=	main.c gameutils.c
 
 # Subdirectories containing game modules
-SUBDIRS		=	00title 01select 02game 04pause 06mini 07shop 08demo 09ready 10delete 12ending
+SUBDIRS		=	wario save 00title 01select 02game 04pause 06mini 07shop 08demo 09ready 10delete 12ending
 
 # Auto-discover all .c files in subdirectories
 .CFILES		+=	$(foreach dir,$(SUBDIRS),$(wildcard $(dir)/*.c))
@@ -32,8 +32,9 @@ endif
 # Object files derived from source files
 .OFILES		=	$(.SFILES:.s=.o) $(.CFILES:.c=.o)
 
+ARCHFLAGS	=	-march=armv4t -mtune=arm7tdmi
 ASFLAGS		=	-mthumb-interwork
-CFLAGS		=	-g -c -O2 -mthumb -mthumb-interwork -nostdlib -fno-common -DNDEBUG
+CFLAGS		=	-g -c -O2 -mthumb -mthumb-interwork $(ARCHFLAGS) -nostdlib -fno-common -DNDEBUG
 LDFLAGS		+=	-Map $(MAPFILE) -nostartfiles \
 				-T ld_script.ld
 

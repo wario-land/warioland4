@@ -1,4 +1,4 @@
-// Scene 4: Highway + Cat — Mode 4 bitmap highway with OBJ animations
+// Scene 4: Highway + Cat -- Mode 4 bitmap highway with OBJ animations
 //
 // Mode 4 provides a 240x160 8-bit indexed bitmap background (the highway).
 // OBJ sprites overlay the car, cat, paper plane, and buildings.
@@ -9,7 +9,7 @@
 //   S4_2: Cat runs from right (x=280) to center (x=119). Anime0. BG scrolls.
 //   S4_3: Cat crouching/idle. Anime2. (30 frames)
 //   S4_4: Cat looking around. Anime3. (30 frames)
-//   S4_5: Cat SHAKING. Anime10. Car shrinks from 2x → 0. Car palette fades.
+//   S4_5: Cat SHAKING. Anime10. Car shrinks from 2x -> 0. Car palette fades.
 //   S4_6: Cat still shaking. Anime10 + paper floating (Anime8). Paper flies to cat.
 //   S4_7: Cat flies up with paper (Anime7, 63-frame loop)
 //   S4_8: Cat swooping. Anime9 + Anime5. Paper sinks every 4th frame.
@@ -45,13 +45,13 @@ extern u32  uObjSize;
 
 void Scene4_Init(void)
 {
-    // === BG palette (17 entries) → BG_PLTT (Mode 4 bitmap palette) ===
+    // === BG palette (17 entries) -> BG_PLTT (Mode 4 bitmap palette) ===
     // From IDA disassembly: DMA_16BIT, count=17 halfwords (0x80000011)
     REG_DMA3SAD = (u32)scene4_bg_Palette;
     REG_DMA3DAD = (u32)BG_PLTT;
     REG_DMA3CNT = ((DMA_ENABLE | DMA_16BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | 17;
 
-    // === OBJ palette (208 entries) → OBJ_PLTT ===
+    // === OBJ palette (208 entries) -> OBJ_PLTT ===
     // From IDA disassembly: DMA_16BIT, count=208 halfwords (0x800000D0)
     REG_DMA3SAD = (u32)scene4_obj_Palette;
     REG_DMA3DAD = (u32)OBJ_PLTT;
@@ -102,8 +102,8 @@ void Scene4_Exec(int time)
     {
     case 0:
         // === S4_0: Decompress bitmap + OBJ tiles ===
-        // Bitmap → BG_VRAM + 0xF00 (skip 16-line top margin)
-        // OBJ tiles → OBJ_VRAM1 (0x6014000 — Mode 4 uses VRAM 0-0x13FFF for bitmap)
+        // Bitmap -> BG_VRAM + 0xF00 (skip 16-line top margin)
+        // OBJ tiles -> OBJ_VRAM1 (0x6014000 -- Mode 4 uses VRAM 0-0x13FFF for bitmap)
         LZ77UnCompVram((const u32 *)scene4_Bitmap,
                        (void *)((u8 *)BG_VRAM + 16 * 240));
         LZ77UnCompVram((const u32 *)scene4_obj_Char, (void *)OBJ_VRAM1);
@@ -233,7 +233,7 @@ void Scene4_Exec(int time)
         break;
 
     case 8:
-        // === S4_8: Cat swooping — Anime9(paper glide) + Anime5(cat flying) ===
+        // === S4_8: Cat swooping -- Anime9(paper glide) + Anime5(cat flying) ===
         // Paper Y sinks every 4th frame
         {
             int tClamped = (uLocalTime > 54) ? 54 : uLocalTime;
@@ -245,14 +245,14 @@ void Scene4_Exec(int time)
         break;
 
     case 9:
-        // === S4_9: Cat diving — Anime9(paper glide) + Anime4(cat catching) ===
+        // === S4_9: Cat diving -- Anime9(paper glide) + Anime4(cat catching) ===
         scene4_Anime9(54, &paper_pattern);
         done = scene4_Anime4(uLocalTime++, &cat_pattern);
         if (done) { sLocalSeq++; uLocalTime = 0; }
         break;
 
     case 10:
-        // === S4_10: Final dive — Anime9 + Anime6 ===
+        // === S4_10: Final dive -- Anime9 + Anime6 ===
         scene4_Anime9(54, &paper_pattern);
         done = scene4_Anime6(uLocalTime++, &cat_pattern);
         if (done) sGameSeq++;

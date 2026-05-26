@@ -1,6 +1,6 @@
 #include "../gba/gba.h"
 
-// Scene 0 Ending OBJ patterns — English
+// Scene 0 Ending OBJ patterns -- English
 const u16 scene0_E_000[] = {
 	0x0001,
 	0x80F8,
@@ -477,7 +477,7 @@ const u16 scene0_E_00F[] = {
 };
 
 
-// Scene 0 Ending OBJ patterns — Japanese
+// Scene 0 Ending OBJ patterns -- Japanese
 const u16 scene0_J_000[] = {
 	0x0001,
 	0x80F8,

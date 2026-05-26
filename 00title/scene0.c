@@ -51,12 +51,13 @@ void Scene0_Init(void)
     LZ77UnCompVram((const u32 *)scene0_Char, (void *)BG_VRAM);
     LZ77UnCompVram((const u32 *)scene0_obj_Char, (void *)OBJ_VRAM0);
 
-    // Clear BG0 screen (256x256, 2048 bytes) with zeros
+    // Clear BG0+BG1 screenblocks (256x256 x 2 = 4096 bytes)
+    // Matches IDA: 0 -> 0x6008000, control 0x81000800 (16-bit, 0x800 hwords)
     {
         volatile u32 z = 0;
         REG_DMA3SAD = (u32)&z;
         REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x800 >> 2);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x1000 >> 2);
     }
 
     // BG0: cave mask tilemap

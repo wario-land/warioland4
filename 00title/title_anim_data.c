@@ -1,7 +1,7 @@
 #include "../gba/gba.h"
 
 // ============================================================
-//  Scene 4 OBJ patterns — extracted from original ROM via IDA
+//  Scene 4 OBJ patterns -- extracted from original ROM via IDA
 // ============================================================
 
 // Cat running cycle (scene4_Anime0): 000-007
@@ -770,7 +770,7 @@ const u16 scene4_obj_bldg[] ALIGNED(4) = {
 };
 
 // ============================================================
-//  Pyramid: Wario OBJ patterns — extracted from original ROM
+//  Pyramid: Wario OBJ patterns -- extracted from original ROM
 // ============================================================
 
 // Anime1: Waiting pose (3 patterns)

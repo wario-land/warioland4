@@ -41,12 +41,13 @@ void Scene1_Init(void)
     // Decompress river scene tiles to VRAM base
     LZ77UnCompVram((const u32 *)scene1_Char, (void *)BG_VRAM);
 
-    // Clear BG0+BG1 screens with zeros (4096 bytes = screenbases 16-17)
+    // Clear BG0+BG1+BG2 screenblocks (6144 bytes = screenbases 16-18, 0x8000-0x97FF)
+    // Matches original DMA: 0->0x6008000, control 0x81000C00 (16-bit, 0xC00 words)
     {
         volatile u32 z = 0;
         REG_DMA3SAD = (u32)&z;
         REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x1000 >> 2);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x1800 >> 2);
     }
 
     // Fill tilemaps for three BG layers

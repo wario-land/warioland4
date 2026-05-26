@@ -1,4 +1,4 @@
-// Scene 0 OBJ animation functions — ending text animations
+// Scene 0 OBJ animation functions -- ending text animations
 // Drives cat/sprite OBJ patterns during Scene 0's ending sequence.
 // Each function maps a time counter to an OBJ pattern table.
 // Returns TRUE when the animation cycle completes (time > 150).

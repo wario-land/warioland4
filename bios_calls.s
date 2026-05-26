@@ -1,5 +1,5 @@
 @ BIOS function wrappers for GBA software interrupts
-@ Must be Thumb code — pokeemerald confirms Thumb SWI calling convention
+@ Must be Thumb code -- pokeemerald confirms Thumb SWI calling convention
 
     .text
     .thumb

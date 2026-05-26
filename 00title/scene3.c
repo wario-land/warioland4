@@ -1,13 +1,13 @@
-// Scene 3: Night road — car driving at night with headlights
+// Scene 3: Night road -- car driving at night with headlights
 //
 // This is the first title cinematic after the waterfall scene.
 // A car drives from the right side of the screen toward the center,
 // with headlights illuminating a night road background.
 //
 // BG layers:
-//   BG0: Car body (512x512, screenbase 16) — priority 0 (frontmost)
-//   BG1: Car shadow (512x512, screenbase 20) — priority 1
-//   BG2: Night background (512x512, screenbase 24) — priority 2 (backmost)
+//   BG0: Car body (512x512, screenbase 16) -- priority 0 (frontmost)
+//   BG1: Car shadow (512x512, screenbase 20) -- priority 1
+//   BG2: Night background (512x512, screenbase 24) -- priority 2 (backmost)
 //
 // Special effects:
 //   - WIN0 window masks the headlight beam area
@@ -66,21 +66,15 @@ void Scene3_Init(void)
     REG_DMA3DAD = (u32)OBJ_PLTT;
     REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_INC | DMA_DEST_INC) << 16) | (16*2 >> 2);
 
-    // ---- Clear tile 0x3FF (blank tile used for empty screen areas) ----
+    // ---- Fill screenbases 16-21 with blank tile 0x3FF (12288 bytes = 6 screenblocks) ----
+    // IDA at 0x800488c: DMA fills 0x6008000 with 0x3FF03FF, control 0x85000C00.
+    // This ensures all 6 screenblocks used by BG0/BG1/BG2 (512x512 each needs 4 screenblocks,
+    // spread across 6 blocks: 16-19 for BG0, 20-23 for BG1, 24-27 for BG2) start clean.
     {
-        volatile u32 z = 0;
-        REG_DMA3SAD = (u32)&z;
-        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x7FE0);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (32 >> 2);
-    }
-
-    // ---- Clear BG screenbases with blank tile ----
-    // BG0-2 all use 512x512 mode (6 screenbases * 0x800 bytes each = 0x3000 bytes)
-    {
-        volatile u32 v = 0x03FF03FF;
-        REG_DMA3SAD = (u32)&v;
-        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + BG0_TOP);
-        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x800*6 >> 2);
+        volatile u32 p = 0x03FF03FF;
+        REG_DMA3SAD = (u32)&p;
+        REG_DMA3DAD = (u32)((u8 *)BG_VRAM + 0x8000);
+        REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x3000 >> 2);
     }
 
     // ---- BG control registers ----
@@ -111,7 +105,7 @@ void Scene3_Init(void)
     REG_WININ  = WININ_WIN0_BG0 | WININ_WIN0_BG1 | WININ_WIN0_BG2 | WININ_WIN0_OBJ | WININ_WIN0_CLR;
     REG_WINOUT = 0;
 
-    // Display off at init — enabled in Exec case 1 after tile decompression
+    // Display off at init -- enabled in Exec case 1 after tile decompression
     REG_DISPCNT = DISPCNT_MODE_0;
 }
 
@@ -141,15 +135,8 @@ void Scene3_Exec(int time)
         break;
 
     case 1:
-        // ---- Clear OBJ VRAM and decompress OBJ tiles ----
-        // OBJ VRAM must be cleared first to prevent leftover sprite tiles
-        // from previous scenes bleeding through.
-        {
-            volatile u32 z = 0;
-            REG_DMA3SAD = (u32)&z;
-            REG_DMA3DAD = (u32)OBJ_VRAM0;
-            REG_DMA3CNT = ((DMA_ENABLE | DMA_32BIT | DMA_SRC_FIXED | DMA_DEST_INC) << 16) | (0x4000 >> 2);
-        }
+        // Decompress OBJ tiles to VRAM. IDA does NOT clear OBJ VRAM first --
+        // the LZ77 decompression writes only the tiles it needs.
         LZ77UnCompVram((const u32 *)scene3_obj_Char, (void *)OBJ_VRAM0);
         sLocalSeq++;
 
@@ -213,7 +200,7 @@ void Scene3_Exec(int time)
         }
 
         // === Headlight brightness based on car position ===
-        // As the car scrolls closer to center (bg_scroll_x decreases from 256→0),
+        // As the car scrolls closer to center (bg_scroll_x decreases from 256->0),
         // BLDY increases making the headlights brighter.
         // Specific scroll positions map to discrete brightness levels.
         if      (bg_scroll_x == 240) REG_BLDY = 1;
@@ -234,6 +221,16 @@ void Scene3_Exec(int time)
         else if (bg_scroll_x ==  76) REG_BLDY = 4;
         else if (bg_scroll_x ==  74) REG_BLDY = 3;
 
+        // Advance scene at frame 350 (matches IDA)
+        if (time == 350)
+            sGameSeq++;
+
+        // === Headlight beam animation and OBJ rendering ===
+        // IMPORTANT: scene3_Anime0 must be called EVERY frame (even during flash)
+        // to keep the animation state machine in sync. The flash overrides the
+        // pattern to NULL after the call. Matches IDA: scene3_Anime0(a1, &x); if(flash) x=0;
+        scene3_Anime0(time, &pattern);
+
         // === Headlight flash effect (lightning/power flicker) ===
         // WIN0 is closed (zero size) during two time ranges, hiding the
         // headlight beam. This creates dramatic flickering moments.
@@ -249,12 +246,7 @@ void Scene3_Exec(int time)
             // Headlights ON: full window, show beam OBJ
             REG_WIN0H = WIN_RANGE(0, 240);
             REG_WIN0V = WIN_RANGE(16, 144);
-            scene3_Anime0(time, &pattern);
         }
-
-        // Advance scene at frame 350
-        if (time == 350)
-            sGameSeq++;
 
         // === Render headlight beam OBJs ===
         // The beam is composed of multiple OBJ segments, each 8 pixels wide.

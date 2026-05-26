@@ -1,16 +1,16 @@
-// Newspaper scene — newspaper front page with cat shadow and scrolling text
+// Newspaper scene -- newspaper front page with cat shadow and scrolling text
 //
 // BG layers (verified against IDA decompile 0x80055a0 + 0x8005674):
-//   BG0: screenbase 16 — mask/overlay data layer (enabled but mostly transparent)
-//   BG1: screenbase 17, 256x512, 16-color, priority 1 — cat shadow + message text
-//   BG2: screenbase 19, 256x256, 16-color, priority 2 — newspaper background
+//   BG0: screenbase 16 -- mask/overlay data layer (enabled but mostly transparent)
+//   BG1: screenbase 17, 256x512, 16-color, priority 1 -- cat shadow + message text
+//   BG2: screenbase 19, 256x256, 16-color, priority 2 -- newspaper background
 //
 // Key fixes from IDA verification:
 //   - BG1 priority=1 (was 0) and BG2 priority=2 (was 0) for proper layering
 //   - Text writes to BG1's screenbase (0x8800), not BG2's (0x9800)
 //   - BG0 IS enabled in DISPCNT (0x0700 = BG0+BG1+BG2)
 //   - Newspaper_Init does NO palette DMA (palette loaded elsewhere)
-//   - UnPackScreen order: cat→BG1(0x9000), newspaper→BG2(0x9800), mask→BG0(0x8000)
+//   - UnPackScreen order: cat->BG1(0x9000), newspaper->BG2(0x9800), mask->BG0(0x8000)
 //   - Initial BG1VOFS=-144 (cat shadow offscreen), BG2VOFS=16 (text start)
 
 #include "../gba/gba.h"
@@ -39,7 +39,7 @@ static const u16 *ns_ptr2, *ns_ptr3;
 
 void Newspaper_Init(void)
 {
-    // === Load BG palette (128 entries) → BG_PLTT ===
+    // === Load BG palette (128 entries) -> BG_PLTT ===
     // IDA disasm: DMA_16BIT, count=0x80=128 halfwords (0x80000080)
     REG_DMA3SAD = (u32)newspaper_Palette;
     REG_DMA3DAD = (u32)BG_PLTT;
@@ -64,11 +64,11 @@ void Newspaper_Init(void)
     }
 
     // UnPackScreen tilemaps to VRAM (matching IDA addresses):
-    // newspaper_cat → screenbase 17 (0x8800) → displayed by BG1
+    // newspaper_cat -> screenbase 17 (0x8800) -> displayed by BG1
     UnPackScreen((const u16 *)newspaper_cat, (vu16 *)((u8 *)BG_VRAM + 0x8800));
-    // newspaper → screenbase 19 (0x9800) → displayed by BG2
+    // newspaper -> screenbase 19 (0x9800) -> displayed by BG2
     UnPackScreen((const u16 *)newspaper, (vu16 *)((u8 *)BG_VRAM + 0x9800));
-    // newspaper_mask → screenbase 16 (0x8000) → displayed by BG0
+    // newspaper_mask -> screenbase 16 (0x8000) -> displayed by BG0
     UnPackScreen((const u16 *)newspaper_mask, (vu16 *)((u8 *)BG_VRAM + 0x8000));
 
     // BG1: 256x512, 16-color, priority 1, screenbase 17, charbase 0
@@ -105,7 +105,7 @@ void Newspaper_Exec(int time)
         // Fade in from black using FadeDec(3)
         if (!FadeDec(3))
             return;
-        // Fade complete: switch to alpha blend BG1↔BG2, EVA=8, EVB=8
+        // Fade complete: switch to alpha blend BG1<->BG2, EVA=8, EVB=8
         REG_BLDCNT = BLDCNT_TGT1_BG1 | BLDCNT_TGT2_BG2 | BLDCNT_EFFECT_BLEND;
         REG_BLDALPHA = 0x0808;
         sLocalSeq++;
@@ -136,8 +136,8 @@ void Newspaper_Exec(int time)
         // When bg_scroll_y reaches 0, set up text pointers and advance.
         if (bg_scroll_y >= 0)
         {
-            // Text now visible — set VRAM destination and ROM source pointers
-            // IDA: ptr0 = 0x6008386 (J) or 0x6008382 (E) → BG0 screenbase 16 + offset
+            // Text now visible -- set VRAM destination and ROM source pointers
+            // IDA: ptr0 = 0x6008386 (J) or 0x6008382 (E) -> BG0 screenbase 16 + offset
             if (bMsgJapanese)
             {
                 ns_ptr0 = (u16 *)((u8 *)BG_VRAM + 0x8386);  // screenbase 16, entry 451
